@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -v '^\\\\.git$')",
+      "Bash(grep -v '^\\\\.$')",
+      "Bash(grep -v '^\\\\.\\\\.$')",
+      "Bash(xargs rm -rf)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:openai.com)",
+      "Bash(uv sync *)",
+      "Bash(npx create-next-app@latest frontend --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --use-pnpm --turbopack)",
+      "Bash(pnpm add *)",
+      "Bash(pnpm dlx *)",
+      "Bash(pnpm build *)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl -sL https://raw.githubusercontent.com/anthropics/skills/main/skills/frontend-design/skill.md)",
+      "Bash(curl *)",
+      "Bash(mkdir -p /c/Users/26375/.claude/skills)",
+      "Bash(cp /c/Dev/my-agent/.claude/skills/frontend-design.md /c/Users/26375/.claude/skills/frontend-design.md)",
+      "Bash(git add *)"
+    ]
+  }
+}

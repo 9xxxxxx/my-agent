@@ -1,0 +1,25 @@
+"""报告生成工具：Markdown 报告撰写与导出"""
+from agents import function_tool
+from pathlib import Path
+from datetime import datetime
+
+
+@function_tool
+def generate_report(title: str, content: str, format: str = "markdown") -> str:
+    """将分析内容生成为报告文件。
+    format: "markdown" 生成 .md 文件。
+    content 应包含完整的分析报告内容（Markdown 格式），含核心摘要、多维剖析、业务建议等。"""
+    reports_dir = Path("reports")
+    reports_dir.mkdir(exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{title.replace(' ', '_')}_{timestamp}.md"
+    filepath = reports_dir / filename
+
+    report_content = f"# {title}\n\n"
+    report_content += f"*生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n"
+    report_content += "---\n\n"
+    report_content += content
+
+    filepath.write_text(report_content, encoding="utf-8")
+    return f"报告已成功导出: {filepath}\n文件大小: {filepath.stat().st_size} 字节"

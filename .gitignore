@@ -1,25 +1,30 @@
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
+*.egg-info/
+dist/
+.venv/
+venv/
 
-# IDE / Editor
+# Environment
+.env
+
+# Node
+node_modules/
+.next/
+out/
+
+# IDE
 .vscode/
 .idea/
-*.swp
-*.swo
 
-# Project
-.chainlit/
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads
+backend/uploads/*
+!backend/uploads/.gitkeep
 
 # Databases
 *.db
@@ -28,9 +33,3 @@ __pycache__/
 
 # Reports
 reports/
-
-# Generated
-feishu_v2_snippets.txt
-
-# Large full DB backups
-/db_backup/demo_backup.sql

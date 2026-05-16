@@ -1,0 +1,20 @@
+[project]
+name = "data-analyst-agent"
+version = "0.1.0"
+description = "LLM-powered data analysis agent with database & file analysis, visualization, and Feishu push"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "openai-agents>=0.1.0",
+    "openai>=1.60.0",
+    "sqlalchemy>=2.0.0",
+    "pandas>=2.2.0",
+    "duckdb>=1.1.0",
+    "openpyxl>=3.1.0",
+    "pyarrow>=18.0.0",
+    "python-dotenv>=1.0.0",
+    "python-multipart>=0.0.18",
+    "aiosmtplib>=3.0.0",
+    "httpx>=0.28.0",
+]
