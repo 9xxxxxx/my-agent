@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Data Analyst Agent",
-  description: "AI-powered data analysis with natural language",
+  title: "Data Analyst",
+  description: "AI-powered data analysis",
 };
 
 export default function RootLayout({
@@ -24,13 +24,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="zh-CN"
-      className={`${geistSans.variable} ${geistMono.variable} h-full dark`}
-    >
-      <body className="h-full bg-background text-foreground antialiased">
+    <html lang="zh-CN" className={`${geistSans.variable} ${geistMono.variable} h-full`}>
+      <body className="h-full bg-[#f9f9f7] text-[#1a1a1a] antialiased">
         {children}
-        <Toaster position="top-right" richColors />
+        <Toaster position="top-center" richColors toastOptions={{ style: { borderRadius: "10px" } }} />
       </body>
     </html>
   );

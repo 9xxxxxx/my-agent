@@ -8,7 +8,7 @@ interface EChartProps {
   height?: number;
 }
 
-export default function EChart({ option, height = 400 }: EChartProps) {
+export default function EChart({ option, height = 360 }: EChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const instanceRef = useRef<echarts.ECharts | null>(null);
 
@@ -16,7 +16,7 @@ export default function EChart({ option, height = 400 }: EChartProps) {
     if (!chartRef.current) return;
 
     if (!instanceRef.current) {
-      instanceRef.current = echarts.init(chartRef.current, "dark");
+      instanceRef.current = echarts.init(chartRef.current);
     }
 
     instanceRef.current.setOption(option as echarts.EChartsOption, { notMerge: true });
@@ -35,7 +35,7 @@ export default function EChart({ option, height = 400 }: EChartProps) {
     <div
       ref={chartRef}
       style={{ width: "100%", height }}
-      className="rounded-lg border border-border/50 bg-background/50"
+      className="rounded-xl"
     />
   );
 }

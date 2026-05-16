@@ -18,7 +18,14 @@
       "Bash(curl *)",
       "Bash(mkdir -p /c/Users/26375/.claude/skills)",
       "Bash(cp /c/Dev/my-agent/.claude/skills/frontend-design.md /c/Users/26375/.claude/skills/frontend-design.md)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(uv run *)",
+      "Bash(pnpm dev *)",
+      "Bash(pkill -f \"uvicorn app:app\")",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(pkill -f \"node\")"
     ]
   }
 }
