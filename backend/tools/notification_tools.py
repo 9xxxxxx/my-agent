@@ -43,7 +43,7 @@ def send_feishu_notification(
                     "aspect_ratio": "16:9",
                 })
         except json.JSONDecodeError:
-            elements.append({"tag": "markdown", "content": "*图表配置解析失败*"}
+            elements.append({"tag": "markdown", "content": "*图表配置解析失败*"})
 
     # 表格
     if table_configs_json:
