@@ -81,6 +81,8 @@ function useSharedState() {
   const deleteConversation = useChatStore((s) => s.deleteConversation);
   const getActiveLLM = useConnectionStore((s) => s.getActiveLLM);
   const getActiveDB = useConnectionStore((s) => s.getActiveDB);
+  const llmProfiles = useConnectionStore((s) => s.llmProfiles);
+  const setActiveLLM = useConnectionStore((s) => s.setActiveLLM);
   const activeLLM = getActiveLLM();
   const activeDB = getActiveDB();
 
@@ -89,7 +91,7 @@ function useSharedState() {
     [conversations, activeId],
   );
 
-  return { conversations, activeId, createConversation, switchConversation, deleteConversation, activeLLM, activeDB, activeConv };
+  return { conversations, activeId, createConversation, switchConversation, deleteConversation, activeLLM, activeDB, activeConv, llmProfiles, setActiveLLM };
 }
 
 // ─── Mobile Layout ───
@@ -255,11 +257,15 @@ function MobilePage() {
                       display: "flex", alignItems: "center", gap: 10,
                       padding: "14px 16px", borderRadius: 14, marginBottom: 4,
                       cursor: "pointer", fontSize: 14,
-                      background: conv.id === activeId ? "var(--card)" : "transparent",
+                      background: conv.id === activeId ? "#f0f0f0" : "transparent",
                       color: conv.id === activeId ? "var(--foreground)" : "var(--muted-foreground)",
-                      border: conv.id === activeId ? "1px solid var(--border)" : "1px solid transparent",
-                      boxShadow: conv.id === activeId ? "0 2px 8px rgba(0,0,0,0.06)" : "none",
+                      border: "1px solid transparent",
+                      transition: "all 0.15s ease",
+                      transform: conv.id === activeId ? "none" : undefined,
                     }}
+                    onMouseDown={(e) => { if (conv.id !== activeId) (e.currentTarget as HTMLElement).style.transform = "scale(0.98)"; }}
+                    onMouseUp={(e) => { (e.currentTarget as HTMLElement).style.transform = "none"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = "none"; }}
                   >
                     <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {conv.title}
@@ -320,7 +326,7 @@ function MobilePage() {
           style={{
             position: "fixed", inset: 0, zIndex: 200,
             display: "flex", alignItems: "center", justifyContent: "center",
-            background: "rgba(0,0,0,0.4)", padding: 16,
+            padding: 16, background: "rgba(0,0,0,0.4)",
           }}
           onClick={() => setDeletingId(null)}
         >
@@ -374,15 +380,33 @@ function MobilePage() {
 // ─── Desktop Layout ───
 
 function DesktopPage() {
-  const { conversations, activeId, createConversation, switchConversation, deleteConversation, activeLLM, activeDB, activeConv } = useSharedState();
+  const { conversations, activeId, createConversation, switchConversation, deleteConversation, activeLLM, activeDB, activeConv, llmProfiles, setActiveLLM } = useSharedState();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [configOpen, setConfigOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  // Keyboard shortcuts: Ctrl+K to open search, ESC to close
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+      if (e.key === "Escape") {
+        setSearchOpen(false);
+        setContextMenu(null);
+        setModelDropdownOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const groups = useMemo(() => groupByDate(conversations), [conversations]);
 
@@ -433,18 +457,25 @@ function DesktopPage() {
       {/* Sidebar */}
       <aside
         className={`
-          w-[240px] lg:w-[240px] shrink-0 flex flex-col bg-[--sidebar] overflow-hidden
+          w-[240px] lg:w-[240px] shrink-0 flex flex-col bg-[--sidebar] overflow-hidden border-r border-[--border]
           max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-50 max-lg:shadow-2xl
           max-lg:transition-transform max-lg:duration-200 max-lg:ease-out
           ${sidebarOpen ? "max-lg:translate-x-0" : "max-lg:-translate-x-full"}
           lg:transition-all lg:duration-200 lg:ease-out
-          ${sidebarOpen ? "" : "lg:w-0"}
+          ${sidebarOpen ? "" : "lg:w-0 lg:border-r-0"}
         `}
         role="navigation"
         aria-label="对话历史"
       >
         <div className="h-12 flex items-center justify-between px-4 shrink-0">
-          <span className="text-[13px] font-semibold tracking-tight text-[--foreground]">Data Analyst</span>
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-[--primary] flex items-center justify-center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
+              </svg>
+            </div>
+            <span className="text-[13px] font-semibold tracking-tight text-[--foreground]">Data Agent</span>
+          </div>
           <button
             onClick={() => setSidebarOpen(false)}
             aria-label="关闭侧边栏"
@@ -456,7 +487,7 @@ function DesktopPage() {
           </button>
         </div>
 
-        <div className="px-2 pb-1 flex items-center gap-0.5">
+        <div className="px-2 pb-1 flex items-center gap-1">
           <button
             onClick={createConversation}
             aria-label="新建对话"
@@ -468,9 +499,9 @@ function DesktopPage() {
             新对话
           </button>
           <button
-            onClick={() => setSearchOpen(!searchOpen)}
+            onClick={() => setSearchOpen(true)}
             aria-label="搜索对话"
-            className="p-2 rounded-md text-[--muted-foreground] hover:bg-[--sidebar-accent] hover:text-[--foreground] transition-colors cursor-pointer"
+            className="p-2 rounded-lg text-[--muted-foreground] hover:bg-[--sidebar-accent] hover:text-[--foreground] transition-colors cursor-pointer"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -478,20 +509,8 @@ function DesktopPage() {
           </button>
         </div>
 
-        {searchOpen && (
-          <div className="px-2 pb-1">
-            <input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索对话..."
-              autoFocus
-              className="w-full px-2.5 py-1.5 rounded-md border border-[--border] bg-white text-[13px] text-[--foreground] placeholder:text-[--muted-foreground]/50 focus:outline-none focus:border-[--ring]"
-            />
-          </div>
-        )}
-
         <div className="flex-1 px-2 py-1 overflow-y-auto">
-          {mounted && filteredGroups.map((group) => (
+          {mounted && groups.map((group) => (
             <div key={group.label} className="mb-1">
               <div suppressHydrationWarning className="text-[10px] text-[--muted-foreground] px-2.5 py-1.5 uppercase tracking-wider font-medium">
                 {group.label}
@@ -503,12 +522,12 @@ function DesktopPage() {
                   onContextMenu={(e) => handleContextMenu(conv.id, e)}
                   role="button"
                   tabIndex={0}
-                  className={`group/item relative flex items-center gap-2 px-2.5 py-2 rounded-md text-[13px] cursor-pointer transition-all mb-0.5 ${
+                  className={`group/item relative flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] cursor-pointer transition-all duration-150 mb-0.5 ${
                     conv.id === activeId
-                      ? "text-[--foreground] font-medium bg-[--sidebar-accent]"
-                      : "text-[--muted-foreground] hover:bg-[--sidebar-accent] hover:text-[--foreground]"
+                      ? "text-[--foreground] font-medium"
+                      : "text-[--muted-foreground] hover:bg-[--muted]/70 hover:text-[--foreground] active:scale-[0.98]"
                   }`}
-                  style={conv.id === activeId ? { boxShadow: 'inset 2px 0 0 0 var(--primary)' } : undefined}
+                  style={conv.id === activeId ? { background: "#f0f0f0" } : undefined}
                 >
                   <span className="flex-1 truncate pr-6" suppressHydrationWarning>{conv.title}</span>
                   <button
@@ -527,9 +546,9 @@ function DesktopPage() {
               ))}
             </div>
           ))}
-          {mounted && filteredConversations.length === 0 && searchQuery && (
+          {mounted && conversations.length === 0 && (
             <div className="px-2.5 py-4 text-[12px] text-[--muted-foreground] text-center">
-              未找到匹配的对话
+              暂无对话
             </div>
           )}
         </div>
@@ -537,19 +556,74 @@ function DesktopPage() {
         <div className="p-2 shrink-0">
           <button
             onClick={() => setConfigOpen(true)}
-            aria-label="连接设置"
+            aria-label="设置"
             className="w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-[13px] text-[--muted-foreground] hover:bg-[--sidebar-accent] hover:text-[--foreground] transition-colors cursor-pointer"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="3" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
             </svg>
-            连接设置
-            <span suppressHydrationWarning className="ml-auto text-[11px] text-[--muted-foreground] truncate max-w-[70px]">
-              {activeLLM?.name || ""}
-            </span>
+            设置
           </button>
         </div>
       </aside>
+
+      {/* Search dialog */}
+      {searchOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] bg-black/40" onClick={() => setSearchOpen(false)}>
+          <div
+            className="relative z-10 w-full max-w-2xl mx-4 bg-[--card] rounded-xl border border-[--border] shadow-xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Search input */}
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-[--border]">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="搜索对话标题或内容..."
+                autoFocus
+                className="flex-1 border-0 outline-none text-[15px] text-[--foreground] placeholder:text-[--muted-foreground]/50 bg-transparent"
+              />
+              <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono text-[--muted-foreground] bg-[--muted] border border-[--border]">ESC</kbd>
+            </div>
+
+            {/* Results */}
+            <div className="max-h-[60vh] overflow-y-auto py-1">
+              {(searchQuery.trim() ? filteredConversations : conversations).slice(0, 20).map((conv) => {
+                const d = new Date(conv.updatedAt);
+                const timeStr = `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+                return (
+                  <button
+                    key={conv.id}
+                    onClick={() => { switchConversation(conv.id); setSearchOpen(false); setSearchQuery(""); }}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors cursor-pointer hover:bg-[#f0f0f0] ${
+                      conv.id === activeId ? "bg-[#f0f0f0]" : ""
+                    }`}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </svg>
+                    <span className="flex-1 min-w-0 text-[14px] text-[--foreground] truncate">{conv.title}</span>
+                    <span className="shrink-0 text-[12px] text-[--muted-foreground] tabular-nums">{timeStr}</span>
+                  </button>
+                );
+              })}
+              {searchQuery.trim() && filteredConversations.length === 0 && (
+                <div className="px-4 py-8 text-center text-[13px] text-[--muted-foreground]">
+                  未找到匹配的对话
+                </div>
+              )}
+              {!searchQuery.trim() && conversations.length === 0 && (
+                <div className="px-4 py-8 text-center text-[13px] text-[--muted-foreground]">
+                  暂无对话
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Context menu */}
       {contextMenu && (
@@ -585,12 +659,12 @@ function DesktopPage() {
       {/* Delete confirmation dialog */}
       {deletingId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setDeletingId(null)}>
-          <div className="bg-[--card] rounded-xl border border-[--border] shadow-lg p-5 max-w-sm w-full mx-3" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-[--card] rounded-xl border border-[--border] shadow-xl p-5 max-w-sm w-full mx-3" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-[15px] font-semibold text-[--foreground] mb-2">删除对话</h3>
             <p className="text-[13px] text-[--muted-foreground] mb-6">确定要删除这个对话吗？此操作无法撤销。</p>
             <div className="flex justify-end gap-3">
-              <button onClick={() => setDeletingId(null)} className="px-4 py-2 rounded-xl text-[13px] text-[--muted-foreground] hover:bg-[--accent] cursor-pointer transition-colors">取消</button>
-              <button onClick={confirmDelete} className="px-4 py-2 rounded-xl text-[13px] font-semibold bg-[#ef4444] text-white hover:bg-[#dc2626] cursor-pointer transition-colors">删除</button>
+              <button onClick={() => setDeletingId(null)} className="px-4 py-2 rounded-lg text-[13px] text-[--muted-foreground] hover:bg-[--accent] cursor-pointer transition-colors">取消</button>
+              <button onClick={confirmDelete} className="px-4 py-2 rounded-lg text-[13px] font-semibold bg-[#ef4444] text-white hover:bg-[#dc2626] cursor-pointer transition-colors">删除</button>
             </div>
           </div>
         </div>
@@ -622,22 +696,80 @@ function DesktopPage() {
                   <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="3" x2="9" y2="21" />
                 </svg>
               </button>
+
+              {/* Model selector dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-[--muted] text-[13px] text-[--muted-foreground] hover:text-[--foreground] transition-colors cursor-pointer"
+                >
+                  <span suppressHydrationWarning className="font-medium text-[--foreground]">
+                    {activeLLM?.config.model || "未配置"}
+                  </span>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                    className={`transition-transform duration-150 ${modelDropdownOpen ? "rotate-180" : ""}`}>
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+
+                {modelDropdownOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setModelDropdownOpen(false)} />
+                    <div className="absolute left-0 top-full mt-1 z-50 w-64 rounded-lg bg-[--card] border border-[--border] shadow-md py-1">
+                      <div className="px-3 py-1.5 text-[11px] text-[--muted-foreground] font-medium uppercase tracking-wider">
+                        切换模型
+                      </div>
+                      {llmProfiles.map((profile) => (
+                        <button
+                          key={profile.id}
+                          onClick={() => {
+                            setActiveLLM(profile.id);
+                            setModelDropdownOpen(false);
+                          }}
+                          className={`w-full flex items-center gap-2.5 px-3 py-2 text-[13px] cursor-pointer transition-colors ${
+                            profile.id === activeLLM?.id
+                              ? "bg-[--primary]/5 text-[--primary]"
+                              : "text-[--foreground] hover:bg-[--muted]"
+                          }`}
+                        >
+                          <span className={`w-2 h-2 rounded-full ${profile.id === activeLLM?.id ? "bg-[--primary]" : "bg-[--border]"}`} />
+                          <div className="flex-1 text-left min-w-0">
+                            <div className="font-medium truncate">{profile.name}</div>
+                            <div className="text-[11px] text-[--muted-foreground] truncate">{profile.config.model}</div>
+                          </div>
+                          {profile.id === activeLLM?.id && (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-[--primary]">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          )}
+                        </button>
+                      ))}
+                      <div className="my-1 border-t border-[--border]" />
+                      <button
+                        onClick={() => { setModelDropdownOpen(false); setConfigOpen(true); }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-[--muted-foreground] hover:bg-[--muted] hover:text-[--foreground] cursor-pointer transition-colors"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="3" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+                        </svg>
+                        管理模型配置
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+
               <span suppressHydrationWarning className="text-[14px] font-medium text-[--foreground] truncate">{activeConv?.title || "与 AI 分析师对话"}</span>
             </div>
 
             <div className="flex items-center gap-2">
-              {/* Status indicators */}
-              <div className="hidden sm:flex items-center gap-2">
-                <span suppressHydrationWarning className="text-[12px] text-[--muted-foreground]">
-                  {activeLLM?.config.model || "未配置"}
+              {/* DB config name */}
+              {mounted && activeDB && (
+                <span className="hidden sm:inline-flex items-center gap-1.5 text-[12px] text-[--muted-foreground] bg-[--muted] px-2 py-1 rounded-md">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[--success]" />
+                  {activeDB.name}
                 </span>
-                {mounted && activeDB && (
-                  <span className="inline-flex items-center gap-1 text-[12px] text-[--muted-foreground]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[--success]" />
-                    {activeDB.config.type}
-                  </span>
-                )}
-              </div>
+              )}
 
               {/* Export button */}
               {mounted && activeConv && activeConv.messages.length > 0 && (
@@ -665,5 +797,13 @@ function DesktopPage() {
 
 export default function Home() {
   const isMobile = useIsMobile();
+  const [hasMounted, setHasMounted] = useState(false);
+  useEffect(() => setHasMounted(true), []);
+
+  // Avoid hydration mismatch: render nothing on server/first client render
+  if (!hasMounted) {
+    return <div style={{ height: "100dvh", background: "var(--background)" }} />;
+  }
+
   return isMobile ? <MobilePage /> : <DesktopPage />;
 }

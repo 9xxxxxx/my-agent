@@ -93,6 +93,70 @@ def _build_echarts_option(
             "type": "treemap",
             "data": [{"name": r.get(x_field, ""), "value": r.get(y_field, 0)} for r in data_records],
         }]
+    elif chart_type == "candlestick":
+        # OHLC data: expects x_field=date, y_field=comma-separated "open,close,low,high"
+        base["xAxis"] = {"type": "category", "data": x_values}
+        base["yAxis"] = {"type": "value", "scale": True}
+        ohlc = []
+        for r in data_records:
+            val = r.get(y_field, "0,0,0,0")
+            if isinstance(val, str):
+                parts = [float(x) for x in val.split(",")]
+            elif isinstance(val, (list, tuple)):
+                parts = [float(x) for x in val]
+            else:
+                parts = [0, 0, 0, 0]
+            # ECharts candlestick: [open, close, lowest, highest]
+            ohlc.append(parts[:4] if len(parts) >= 4 else parts + [0] * (4 - len(parts)))
+        base["series"] = [{"type": "candlestick", "data": ohlc}]
+    elif chart_type == "sankey":
+        # Expects series_field=source, x_field=target, y_field=value
+        nodes = set()
+        links = []
+        for r in data_records:
+            src = str(r.get(series_field or x_field, ""))
+            tgt = str(r.get(x_field if series_field else y_field, ""))
+            val = r.get(y_field if series_field else "value", 0)
+            nodes.add(src)
+            nodes.add(tgt)
+            links.append({"source": src, "target": tgt, "value": val})
+        base.pop("grid", None)
+        base.pop("xAxis", None)
+        base.pop("yAxis", None)
+        base["series"] = [{
+            "type": "sankey",
+            "data": [{"name": n} for n in sorted(nodes)],
+            "links": links,
+            "emphasis": {"focus": "adjacency"},
+            "lineStyle": {"color": "gradient", "curveness": 0.5},
+        }]
+    elif chart_type == "waterfall":
+        # Cumulative waterfall: each bar starts where previous ended
+        values = [r.get(y_field, 0) for r in data_records]
+        base["xAxis"] = {"type": "category", "data": x_values, "axisLabel": {"rotate": 30 if len(x_values) > 10 else 0}}
+        base["yAxis"] = {"type": "value"}
+        # Build transparent base + colored bar stacks
+        base_data = []
+        positive_data = []
+        negative_data = []
+        cumulative = 0
+        for v in values:
+            if v >= 0:
+                base_data.append(cumulative)
+                positive_data.append(v)
+                negative_data.append("-")
+                cumulative += v
+            else:
+                cumulative += v
+                base_data.append(cumulative)
+                positive_data.append("-")
+                negative_data.append(abs(v))
+        base["series"] = [
+            {"type": "bar", "stack": "waterfall", "data": base_data, "itemStyle": {"color": "transparent"}, "emphasis": {"itemStyle": {"color": "transparent"}}},
+            {"type": "bar", "stack": "waterfall", "data": positive_data, "name": "增加", "itemStyle": {"color": "#059669"}},
+            {"type": "bar", "stack": "waterfall", "data": negative_data, "name": "减少", "itemStyle": {"color": "#ef4444"}},
+        ]
+        base["legend"] = {"data": ["增加", "减少"], "bottom": 0}
     else:
         base["xAxis"] = {"type": "category", "data": x_values}
         base["yAxis"] = {"type": "value"}
@@ -108,7 +172,10 @@ def create_chart(
 ) -> str:
     """执行 SQL 查询并生成 ECharts 图表配置 JSON。
     data_source: "database" 从数据库查询，"file" 从已上传文件查询。
-    支持的图表类型: bar, line, pie, scatter, area, radar, heatmap, boxplot, funnel, treemap, horizontal_bar。"""
+    支持的图表类型: bar(柱状图), line(折线图), pie(饼图), scatter(散点图), area(面积图), radar(雷达图), heatmap(热力图), boxplot(箱线图), candlestick(K线图), funnel(漏斗图), sankey(桑基图), horizontal_bar(水平柱状图), treemap(矩形树图), waterfall(瀑布图)。
+    candlestick: y_field 填 "open,close,low,high" 四列逗号分隔。
+    sankey: series_field=源, x_field=目标, y_field=值。
+    waterfall: 自动计算累计值，正数绿色、负数红色。"""
     if chart_type not in CHART_TYPES:
         supported = ", ".join(f"{k}({v})" for k, v in CHART_TYPES.items())
         return f"错误: 不支持的图表类型 '{chart_type}'。支持: {supported}"

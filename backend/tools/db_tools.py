@@ -10,6 +10,9 @@ def list_schemas(database_url: str = "") -> str:
     PostgreSQL 中对应 schema，MySQL 中对应 database，SQLite 固定为 main。"""
     try:
         engine = get_engine(database_url or None)
+    except ValueError:
+        return "未配置数据库连接。请在设置中配置数据库连接，或上传数据文件后使用文件分析功能。"
+    try:
         adapter = get_adapter(engine)
         schemas = adapter.list_schemas()
         if not schemas:
@@ -27,6 +30,9 @@ def list_tables(schema_name: str = "", database_url: str = "") -> str:
     """列出数据库中的表和视图。可指定 schema_name 聚焦特定范围。"""
     try:
         engine = get_engine(database_url or None)
+    except ValueError:
+        return "未配置数据库连接。请在设置中配置数据库连接。"
+    try:
         adapter = get_adapter(engine)
         tables = adapter.list_tables(schema=schema_name or None)
         if not tables:
@@ -53,6 +59,9 @@ def describe_table(table_name: str, schema_name: str = "", database_url: str = "
     支持 "schema.table" 格式。"""
     try:
         engine = get_engine(database_url or None)
+    except ValueError:
+        return "未配置数据库连接。请在设置中配置数据库连接。"
+    try:
         adapter = get_adapter(engine)
         if "." in table_name and not schema_name:
             parts = table_name.split(".", 1)

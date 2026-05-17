@@ -15,4 +15,10 @@ def create_llm_model(
     name = model_name or settings.OPENAI_MODEL
 
     client = AsyncOpenAI(api_key=key, base_url=url)
-    return OpenAIChatCompletionsModel(model=name, openai_client=client)
+
+    # 始终回传 reasoning_content，兼容 DeepSeek 等 reasoning 模型
+    return OpenAIChatCompletionsModel(
+        model=name,
+        openai_client=client,
+        should_replay_reasoning_content=lambda ctx: True,
+    )

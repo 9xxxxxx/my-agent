@@ -25,7 +25,14 @@
       "Bash(pnpm dev *)",
       "Bash(pkill -f \"uvicorn app:app\")",
       "Bash(pkill -f \"next dev\")",
-      "Bash(pkill -f \"node\")"
+      "Bash(pkill -f \"node\")",
+      "Bash(netstat -ano)",
+      "Bash(taskkill *)",
+      "Bash(python3 scripts/search.py \"data analysis dashboard tool clean minimal professional\" --design-system -p \"Data Analyst Agent\")",
+      "Bash(npx next *)",
+      "Bash(tasklist)",
+      "Bash(python3 scripts/search.py \"data analysis tool SaaS modern clean\" --design-system -p \"Data Analyst\")",
+      "Bash(uv pip *)"
     ]
   }
 }

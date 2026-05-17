@@ -11,11 +11,11 @@ const fieldCls =
 
 const labelCls = "text-[11px] font-semibold text-[--muted-foreground] uppercase tracking-[0.05em]";
 
-const DB_TYPES: { value: DBType; label: string }[] = [
-  { value: "postgresql", label: "PostgreSQL" },
-  { value: "mysql", label: "MySQL" },
-  { value: "sqlite", label: "SQLite" },
-  { value: "duckdb", label: "DuckDB" },
+const DB_TYPES: { value: DBType; label: string; color: string }[] = [
+  { value: "postgresql", label: "PostgreSQL", color: "#336791" },
+  { value: "mysql", label: "MySQL", color: "#4479A1" },
+  { value: "sqlite", label: "SQLite", color: "#003B57" },
+  { value: "duckdb", label: "DuckDB", color: "#FFC107" },
 ];
 
 const PROVIDERS: { key: string; label: string; color: string }[] = [
@@ -87,13 +87,16 @@ export default function SettingsPanel({ onClose }: { onClose?: () => void }) {
   const setEditingDB = useConnectionStore((s) => s.setEditingDB);
   const assembleDbUrl = useConnectionStore((s) => s.assembleDbUrl);
 
+  const mode = useConnectionStore((s) => s.mode);
+  const setMode = useConnectionStore((s) => s.setMode);
+
   const llmProfile = llmProfiles.find((p) => p.id === editingLLMId) || llmProfiles[0];
   const dbProfile = dbProfiles.find((p) => p.id === editingDBId) || dbProfiles[0];
 
   const [showKey, setShowKey] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<"ok" | "fail" | null>(null);
-  const [activeTab, setActiveTab] = useState<"llm" | "db">("llm");
+  const [activeTab, setActiveTab] = useState<"general" | "llm" | "db">("general");
 
   if (!llmProfile || !dbProfile) return null;
 
@@ -129,8 +132,12 @@ export default function SettingsPanel({ onClose }: { onClose?: () => void }) {
 
       {/* ─── Tabs ─── */}
       <div className="px-4 sm:px-8 pt-4 sm:pt-5">
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "llm" | "db")}>
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "general" | "llm" | "db")}>
           <TabsList variant="line" className="w-full">
+            <TabsTrigger value="general" className="flex-1 text-[13px] py-2 font-medium">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5 opacity-50"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+              通用
+            </TabsTrigger>
             <TabsTrigger value="llm" className="flex-1 text-[13px] py-2 font-medium">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5 opacity-50"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
               LLM 模型
@@ -145,7 +152,9 @@ export default function SettingsPanel({ onClose }: { onClose?: () => void }) {
 
       {/* ─── Tab content ─── */}
       <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-4 sm:py-5">
-        {activeTab === "llm" ? (
+        {activeTab === "general" ? (
+          <GeneralPanel mode={mode} onModeChange={setMode} />
+        ) : activeTab === "llm" ? (
           <LLMPanel
             profiles={llmProfiles}
             profile={llmProfile}
@@ -184,6 +193,72 @@ export default function SettingsPanel({ onClose }: { onClose?: () => void }) {
         <span className="sm:hidden" />
         <button onClick={onClose} className="px-5 py-2 rounded-md text-[13px] font-semibold bg-[--primary] text-[--primary-foreground] hover:opacity-90 cursor-pointer transition-opacity">完成</button>
       </div>
+    </div>
+  );
+}
+
+// ─── General Panel ───
+function GeneralPanel({ mode, onModeChange }: { mode: "dev" | "prod"; onModeChange: (m: "dev" | "prod") => void }) {
+  return (
+    <div className="space-y-6">
+      {/* Environment mode */}
+      <section>
+        <label className={labelCls}>运行环境</label>
+        <p className="text-[12px] text-[--muted-foreground] mt-1 mb-3">开发模式显示 Agent 调试信息（工具调用、推理过程等），生产模式只显示最终回复。</p>
+        <div className="grid grid-cols-2 gap-2" role="radiogroup">
+          {([
+            { value: "prod" as const, label: "生产模式", desc: "简洁输出，隐藏内部细节", color: "#10b981" },
+            { value: "dev" as const, label: "开发模式", desc: "显示工具调用、推理过程", color: "#3b82f6" },
+          ]).map((opt) => {
+            const sel = mode === opt.value;
+            return (
+              <button
+                key={opt.value}
+                onClick={() => onModeChange(opt.value)}
+                role="radio"
+                aria-checked={sel}
+                className={`flex items-start gap-3 p-3 rounded-lg border transition-all duration-150 cursor-pointer text-left ${
+                  sel ? "border-[--primary] bg-[--primary]/[0.03]" : "border-transparent bg-[--muted] hover:bg-[--border]"
+                }`}
+              >
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-bold text-white shrink-0 transition-transform duration-150 ${sel ? "scale-105" : ""}`}
+                  style={{ background: opt.color }}>
+                  {opt.label[0]}
+                </div>
+                <div>
+                  <div className={`text-[13px] font-medium ${sel ? "text-[--foreground]" : "text-[--muted-foreground]"}`}>{opt.label}</div>
+                  <div className="text-[11px] text-[--muted-foreground] mt-0.5">{opt.desc}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Keyboard shortcuts */}
+      <section className="bg-[--muted] rounded-lg p-4">
+        <h3 className="text-[13px] font-semibold text-[--foreground] mb-3">快捷键</h3>
+        <div className="space-y-2">
+          {[
+            { keys: "Ctrl + K", desc: "搜索对话" },
+            { keys: "Esc", desc: "关闭弹窗" },
+            { keys: "Enter", desc: "发送消息" },
+            { keys: "Shift + Enter", desc: "换行" },
+          ].map((item) => (
+            <div key={item.keys} className="flex items-center justify-between">
+              <span className="text-[12px] text-[--muted-foreground]">{item.desc}</span>
+              <kbd className="px-2 py-0.5 rounded text-[11px] font-mono text-[--muted-foreground] bg-[--card] border border-[--border]">{item.keys}</kbd>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* About */}
+      <section className="bg-[--muted] rounded-lg p-4">
+        <h3 className="text-[13px] font-semibold text-[--foreground] mb-1">关于</h3>
+        <p className="text-[12px] text-[--muted-foreground] leading-relaxed">Data Agent — 智能数据分析助手，支持多 Agent 协作、SQL 查询、数据可视化和报告生成。</p>
+        <p className="text-[11px] text-[--muted-foreground] mt-2 opacity-60">v0.1.0</p>
+      </section>
     </div>
   );
 }
@@ -370,7 +445,7 @@ function DBPanel({
                 onResetTest();
               }} role="radio" aria-checked={sel}
                 className={`flex flex-col items-center gap-1.5 py-3 rounded-lg border transition-all duration-150 cursor-pointer ${sel ? "border-[--primary] bg-[--primary]/[0.03]" : "border-transparent bg-[--muted] hover:bg-[--border]"}`}>
-                <div className={`w-8 h-8 rounded-full bg-[#374151] flex items-center justify-center text-[13px] font-bold text-white transition-transform duration-150 ${sel ? "scale-105" : ""}`}>{t.label[0]}</div>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-bold text-white transition-transform duration-150 ${sel ? "scale-105" : ""}`} style={{ background: t.color }}>{t.label[0]}</div>
                 <span className={`text-[12px] font-medium ${sel ? "text-[--foreground]" : "text-[--muted-foreground]"}`}>{t.label}</span>
               </button>
             );

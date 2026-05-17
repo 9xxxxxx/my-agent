@@ -22,15 +22,21 @@ export default function ChatPanel() {
   const setLastToolOutput = useChatStore((s) => s.setLastToolOutput);
   const setLastChart = useChatStore((s) => s.setLastChart);
   const removeLastAssistant = useChatStore((s) => s.removeLastAssistant);
+  const truncateFromIndex = useChatStore((s) => s.truncateFromIndex);
   const flushConversation = useChatStore((s) => s.flushConversation);
   const setLoading = useChatStore((s) => s.setLoading);
   const setCurrentTool = useChatStore((s) => s.setCurrentTool);
+  const currentAgent = useChatStore((s) => s.currentAgent);
+  const setCurrentAgent = useChatStore((s) => s.setCurrentAgent);
   const getActiveLLM = useConnectionStore((s) => s.getActiveLLM);
   const getActiveDB = useConnectionStore((s) => s.getActiveDB);
   const assembleDbUrl = useConnectionStore((s) => s.assembleDbUrl);
+  const fontSize = useConnectionStore((s) => s.fontSize);
+  const mode = useConnectionStore((s) => s.mode);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [editContent, setEditContent] = useState<string | null>(null);
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
@@ -54,6 +60,18 @@ export default function ChatPanel() {
       handleSend(lastUser.content);
     }, 50);
   }, [removeLastAssistant]);
+
+  const handleEdit = useCallback((content: string) => {
+    // 找到被编辑消息的索引，截断该消息及之后的所有消息
+    const state = useChatStore.getState();
+    const msgs = state.getMessages();
+    const idx = msgs.findIndex((m) => m.role === "user" && m.content === content);
+    if (idx >= 0) {
+      truncateFromIndex(idx);
+    }
+    // 将消息内容放入输入框
+    setEditContent(content);
+  }, [truncateFromIndex]);
 
   const handleSend = useCallback(
     async (message: string) => {
@@ -82,13 +100,14 @@ export default function ChatPanel() {
       });
       setLoading(true);
       setCurrentTool(null);
+      setCurrentAgent(null);
 
       abortRef.current = new AbortController();
       const dbProfile = getActiveDB() ?? undefined;
       const dbUrl = assembleDbUrl(dbProfile);
 
       try {
-        for await (const event of streamChat(message, llm.config, abortRef.current.signal, dbUrl || undefined, history)) {
+        for await (const event of streamChat(message, llm.config, abortRef.current.signal, dbUrl || undefined, history, mode)) {
           switch (event.type) {
             case "text_delta":
               appendToLastAssistant(event.content || "");
@@ -111,6 +130,23 @@ export default function ChatPanel() {
                 setLastChart(JSON.parse(event.content || "{}"));
               } catch {}
               break;
+            case "agent_change":
+              if (event.display_name) {
+                setCurrentAgent(event.display_name);
+              }
+              break;
+            case "handoff":
+              if (event.target_display) {
+                // 添加系统消息显示 Agent 切换
+                addMessage({
+                  id: crypto.randomUUID(),
+                  role: "system",
+                  content: `切换至 ${event.target_display}`,
+                  timestamp: Date.now(),
+                });
+                setCurrentAgent(event.target_display);
+              }
+              break;
             case "error":
               toast.error(event.content || "发生错误");
               break;
@@ -128,28 +164,33 @@ export default function ChatPanel() {
         flushConversation();
       }
     },
-    [getActiveLLM, getActiveDB, assembleDbUrl, addMessage, appendToLastAssistant, appendToLastReasoning, addToolCall, setLastToolOutput, setLastChart, setLoading, setCurrentTool, flushConversation],
+    [getActiveLLM, getActiveDB, assembleDbUrl, addMessage, appendToLastAssistant, appendToLastReasoning, addToolCall, setLastToolOutput, setLastChart, setLoading, setCurrentTool, setCurrentAgent, flushConversation, mode],
   );
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div ref={scrollRef} className="flex-1 overflow-y-auto transition-opacity duration-200">
         {!mounted || messages.length === 0 ? (
-          /* Empty state — centered welcome */
-          <div className="h-full flex flex-col items-center justify-center px-4 sm:px-6 pb-24 sm:pb-32">
-            <div className="max-w-md w-full text-center">
-              {/* Logo */}
-              <div className="w-10 h-10 rounded-xl bg-[--muted] mx-auto mb-6 flex items-center justify-center">
-                <svg className="w-5 h-5 text-[--muted-foreground]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
-                </svg>
+          /* Empty state — centered welcome with input (ChatGPT style) */
+          <div className="h-full flex flex-col items-center justify-center px-4 sm:px-6">
+            <div className="max-w-[680px] w-full">
+              {/* Logo + Title */}
+              <div className="text-center mb-8">
+                <div className="w-12 h-12 rounded-xl bg-[--muted] mx-auto mb-5 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-[--muted-foreground]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
+                  </svg>
+                </div>
+                <h1 className="text-[24px] font-bold text-[--foreground] mb-2 tracking-tight">数据分析助手</h1>
+                <p className="text-[15px] text-[--muted-foreground] leading-relaxed">
+                  上传数据文件或连接数据库，用自然语言提问
+                </p>
               </div>
 
-              {/* Title */}
-              <h1 className="text-[22px] font-bold text-[--foreground] mb-2 tracking-tight">数据分析助手</h1>
-              <p className="text-[14px] text-[--muted-foreground] leading-relaxed mb-8">
-                上传数据文件或连接数据库，用自然语言提问
-              </p>
+              {/* Centered input bar */}
+              <div className="mb-8">
+                <InputBar onSend={handleSend} disabled={false} />
+              </div>
 
               {/* Quick actions — list style */}
               <div className="space-y-1" role="list" aria-label="快捷操作">
@@ -185,7 +226,7 @@ export default function ChatPanel() {
                       {q.icon}
                     </span>
                     <span className="flex-1 min-w-0">
-                      <span className="block text-[14px] text-[--foreground]">{q.title}</span>
+                      <span className="block text-[15px] text-[--foreground]">{q.title}</span>
                     </span>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[--muted-foreground] opacity-0 group-hover:opacity-100 transition-opacity">
                       <polyline points="9 18 15 12 9 6" />
@@ -197,19 +238,26 @@ export default function ChatPanel() {
           </div>
         ) : (
           /* Message list */
-          <div className="max-w-[900px] mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4">
-            {messages.map((msg, i) => (
-              <div key={msg.id} className="message-enter">
-                <MessageBubble
-                  message={msg}
-                  onRetry={
-                    msg.role === "assistant" && i === messages.length - 1 && !isLoading
-                      ? handleRetry
-                      : undefined
-                  }
-                />
-              </div>
-            ))}
+          <div className="max-w-[1000px] mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4" style={{ "--chat-font-size": `${fontSize}px` } as React.CSSProperties}>
+            {messages.map((msg, i) => {
+              // 跳过空的 assistant 消息（流式传输尚未到达），避免与 loading 指示器重复
+              if (msg.role === "assistant" && !msg.content && isLoading && i === messages.length - 1) {
+                return null;
+              }
+              return (
+                <div key={msg.id} className="message-enter">
+                  <MessageBubble
+                    message={msg}
+                    onRetry={
+                      msg.role === "assistant" && i === messages.length - 1 && !isLoading
+                        ? handleRetry
+                        : undefined
+                    }
+                    onEdit={msg.role === "user" ? handleEdit : undefined}
+                  />
+                </div>
+              );
+            })}
 
             {isLoading && currentTool && (
               <div className="flex items-center gap-3 py-2 message-enter" role="status" aria-live="polite">
@@ -219,6 +267,9 @@ export default function ChatPanel() {
                   </svg>
                 </div>
                 <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[--muted] text-[13px] text-[--muted-foreground]">
+                  {currentAgent && (
+                    <span className="text-[11px] font-medium text-[--primary] bg-[--primary]/5 px-1.5 py-0.5 rounded">{currentAgent}</span>
+                  )}
                   <div className="w-1.5 h-1.5 rounded-full bg-[--muted-foreground] animate-pulse" />
                   <span>正在调用 <span className="font-mono font-medium text-[--foreground]">{currentTool}</span></span>
                 </div>
@@ -232,7 +283,10 @@ export default function ChatPanel() {
                     <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
                   </svg>
                 </div>
-                <div className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-[--muted]">
+                <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[--muted]">
+                  {currentAgent && (
+                    <span className="text-[11px] font-medium text-[--primary] bg-[--primary]/5 px-1.5 py-0.5 rounded">{currentAgent}</span>
+                  )}
                   <div className="w-1.5 h-1.5 rounded-full bg-[--muted-foreground] animate-bounce" style={{ animationDelay: "0ms" }} />
                   <div className="w-1.5 h-1.5 rounded-full bg-[--muted-foreground]/70 animate-bounce" style={{ animationDelay: "150ms" }} />
                   <div className="w-1.5 h-1.5 rounded-full bg-[--muted-foreground]/40 animate-bounce" style={{ animationDelay: "300ms" }} />
@@ -243,24 +297,30 @@ export default function ChatPanel() {
         )}
       </div>
 
-      {/* Input bar with stop button */}
-      <div className="shrink-0 border-t border-[--border] safe-area-bottom">
-        <div className="max-w-[900px] mx-auto px-3 sm:px-4 py-3 sm:py-4">
-          {isLoading ? (
-            <button
-              onClick={handleStop}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-[--border] hover:bg-[--muted] text-[13px] text-[--muted-foreground] hover:text-[--foreground] transition-colors cursor-pointer"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="6" y="6" width="12" height="12" rx="2" />
-              </svg>
-              停止生成
-            </button>
-          ) : (
-            <InputBar onSend={handleSend} disabled={false} />
-          )}
+      {/* Input bar with stop button — hidden during welcome state */}
+      {mounted && messages.length > 0 && (
+        <div className="shrink-0 border-t border-[--border] safe-area-bottom">
+          <div className="max-w-[1000px] mx-auto px-3 sm:px-4 py-3 sm:py-4">
+            {isLoading ? (
+              <button
+                onClick={handleStop}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-[--border] hover:bg-[--muted] text-[13px] text-[--muted-foreground] hover:text-[--foreground] transition-colors cursor-pointer"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                </svg>
+                停止生成
+              </button>
+            ) : (
+              <InputBar
+                onSend={(msg) => { setEditContent(null); handleSend(msg); }}
+                disabled={false}
+                defaultValue={editContent}
+              />
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

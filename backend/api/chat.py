@@ -4,23 +4,41 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from agents import Runner
-from core.agent import create_agent
+from core.agent import create_agent, AGENT_DISPLAY_NAMES, ORCHESTRATOR_NAME
 from core.llm import create_llm_model
+from core.database import set_current_db_url
 
 router = APIRouter()
+
+# Case-insensitive lookup for agent display names
+_AGENT_DISPLAY_MAP = {k.lower(): v for k, v in AGENT_DISPLAY_NAMES.items()}
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+    reasoning: str | None = None
+    toolCalls: list[dict] | None = None
 
 
 class ChatRequest(BaseModel):
     message: str
+    history: list[ChatMessage] | None = None
     model: str | None = None
     api_key: str | None = None
     base_url: str | None = None
+    database_url: str | None = None
     instructions: str | None = None
+    mode: str | None = "prod"  # "dev" or "prod"
 
 
 @router.post("/api/chat")
 async def chat(req: ChatRequest, request: Request):
     """SSE 流式对话：前端发送消息，后端流式返回 Agent 事件"""
+    # Set per-request database URL for tools to use
+    if req.database_url:
+        set_current_db_url(req.database_url)
+
     llm_model = create_llm_model(
         api_key=req.api_key,
         base_url=req.base_url,
@@ -28,40 +46,113 @@ async def chat(req: ChatRequest, request: Request):
     )
     agent = create_agent(model=llm_model, instructions=req.instructions)
 
+    def build_input_items(history: list[ChatMessage], new_message: str) -> list[dict]:
+        """将前端消息历史转换为 SDK Responses API input item 格式。
+
+        关键：对于 DeepSeek/Mimo 等 reasoning 模型，必须在 assistant 消息前插入
+        reasoning item，否则 API 会返回 400 "reasoning_content must be passed back"。
+
+        使用 EasyInputMessage 格式 {"role": ..., "content": ...}（两键），
+        不加 "type": "message"，避免 SDK Converter 误判为 ResponseOutputMessage。
+        """
+        items: list[dict] = []
+
+        for msg in history:
+            if msg.role == "user":
+                items.append({"role": "user", "content": msg.content})
+            elif msg.role == "assistant":
+                if msg.content and msg.content.strip():
+                    # 如果有 reasoning 内容，先插入 reasoning item
+                    # SDK 的 Converter 会将其转为 reasoning_content 字段
+                    if msg.reasoning and msg.reasoning.strip():
+                        items.append({
+                            "id": "__fake_id__",
+                            "type": "reasoning",
+                            "summary": [{"text": msg.reasoning, "type": "summary_text"}],
+                            "provider_data": {},
+                        })
+                    items.append({"role": "assistant", "content": msg.content})
+            elif msg.role == "system":
+                items.append({"role": "system", "content": msg.content})
+
+        # 当前用户消息
+        items.append({"role": "user", "content": new_message})
+        return items
+
+    def sse(event_type: str, **kwargs) -> str:
+        data = {"type": event_type, **kwargs}
+        return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+    is_dev = req.mode == "dev"
+
     async def event_stream():
         try:
-            result = Runner.run_streamed(agent, req.message)
+            if req.history:
+                input_items = build_input_items(req.history, req.message)
+                result = Runner.run_streamed(agent, input_items)
+            else:
+                result = Runner.run_streamed(agent, req.message)
+
+            # ── Prod 模式文本过滤 ──
+            # 策略：只输出非 Orchestrator Agent 的文本，Orchestrator 的文本全部丢弃。
+            current_agent_name = ORCHESTRATOR_NAME
+
             async for event in result.stream_events():
-                # 文本增量
-                if event.type == "raw_response_event" and hasattr(event.data, "delta"):
-                    yield f"data: {json.dumps({'type': 'text_delta', 'content': event.data.delta}, ensure_ascii=False)}\n\n"
+                # 原始响应事件
+                if event.type == "raw_response_event":
+                    dtype = getattr(event.data, "type", "")
 
-                # 工具调用开始
-                elif event.type == "run_item_streamed" and hasattr(event.item, "type"):
-                    if event.item.type == "tool_call_item":
-                        tool_name = getattr(event.item, "raw_item", {})
-                        name = getattr(tool_name, "name", "unknown") if hasattr(tool_name, "name") else "unknown"
-                        yield f"data: {json.dumps({'type': 'tool_call', 'tool': name}, ensure_ascii=False)}\n\n"
+                    if dtype == "response.output_text.delta":
+                        delta = event.data.delta
+                        if is_dev:
+                            yield sse("text_delta", content=delta)
+                        elif current_agent_name != ORCHESTRATOR_NAME:
+                            # 只有 specialist agent 的文本才输出
+                            yield sse("text_delta", content=delta)
 
-                    # 工具返回结果
+                    elif dtype in ("response.reasoning_summary_text.delta", "response.reasoning_text.delta"):
+                        if is_dev:
+                            yield sse("reasoning_delta", content=event.data.delta)
+
+                # Agent 切换事件
+                elif event.type == "agent_updated_stream_event":
+                    new_name = getattr(event.new_agent, "name", "unknown")
+                    current_agent_name = new_name
+                    if is_dev:
+                        display_name = AGENT_DISPLAY_NAMES.get(new_name, new_name)
+                        yield sse("agent_change", agent=new_name, display_name=display_name)
+
+                # 运行项事件
+                elif event.type == "run_item_stream_event":
+                    if event.item.type == "handoff_call_item":
+                        if is_dev:
+                            raw = event.item.raw_item
+                            target = getattr(raw, "name", "").replace("transfer_to_", "")
+                            target_display = _AGENT_DISPLAY_MAP.get(target.lower(), target)
+                            yield sse("handoff", target=target, target_display=target_display)
+
+                    elif event.item.type == "tool_call_item":
+                        if is_dev:
+                            raw = event.item.raw_item
+                            yield sse("tool_call",
+                                      tool=getattr(raw, "name", "unknown"),
+                                      arguments=getattr(raw, "arguments", ""))
+
                     elif event.item.type == "tool_call_output_item":
                         output = str(getattr(event.item, "output", ""))
-                        # 检测图表标记
+                        call_id = getattr(event.item.raw_item, "call_id", "")
                         if "[ECHARTS_CHART]" in output:
                             chart_json = output.split("[ECHARTS_CHART]")[1].strip()
-                            yield f"data: {json.dumps({'type': 'chart', 'content': chart_json}, ensure_ascii=False)}\n\n"
-                        else:
-                            yield f"data: {json.dumps({'type': 'tool_result', 'content': output[:2000]}, ensure_ascii=False)}\n\n"
+                            yield sse("chart", content=chart_json)
+                        elif is_dev:
+                            yield sse("tool_result", content=output[:3000], call_id=call_id)
 
-            # 最终完成
-            final_output = result.final_output if hasattr(result, "final_output") else ""
-            if final_output:
-                yield f"data: {json.dumps({'type': 'text_delta', 'content': final_output}, ensure_ascii=False)}\n\n"
-
-            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            yield sse("done")
 
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
+            import logging, traceback
+            logging.getLogger("chat").error("CHAT ERROR: %s\n%s", e, traceback.format_exc())
+            yield sse("error", content=str(e))
 
     return StreamingResponse(
         event_stream(),

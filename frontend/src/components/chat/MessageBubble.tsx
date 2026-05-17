@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import EChart from "@/components/chart/EChart";
 import type { EChartsOption } from "echarts";
@@ -10,6 +10,7 @@ import { toast } from "sonner";
 interface Props {
   message: Message;
   onRetry?: () => void;
+  onEdit?: (content: string) => void;
 }
 
 // ─── Copy button ───
@@ -195,6 +196,90 @@ function ToolCallCard({ tool, index }: { tool: ToolCall; index: number }) {
   );
 }
 
+// ─── Section with copy button (hover to reveal) ───
+
+function SectionCopyButton({ containerRef }: { containerRef: React.RefObject<HTMLElement | null> }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    const text = containerRef.current?.innerText || "";
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error("复制失败");
+    }
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      aria-label={copied ? "已复制" : "复制此段"}
+      className="absolute -right-1 -top-1 p-1 rounded-md bg-[--card] border border-[--border] shadow-sm opacity-0 group-hover/section:opacity-100 transition-opacity duration-150 cursor-pointer hover:bg-[--muted] z-10"
+    >
+      {copied ? (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      ) : (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
+// Section wrappers — must be real components (hooks allowed)
+function H1Section({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  return (
+    <div ref={ref} className="relative group/section">
+      <h1 className="text-[24px] font-bold mt-6 mb-3 text-[--foreground]">{children}</h1>
+      <SectionCopyButton containerRef={ref} />
+    </div>
+  );
+}
+function H2Section({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  return (
+    <div ref={ref} className="relative group/section">
+      <h2 className="text-[21px] font-bold mt-5 mb-2.5 text-[--foreground]">{children}</h2>
+      <SectionCopyButton containerRef={ref} />
+    </div>
+  );
+}
+function H3Section({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  return (
+    <div ref={ref} className="relative group/section">
+      <h3 className="text-[18px] font-semibold mt-4 mb-2 text-[--foreground]">{children}</h3>
+      <SectionCopyButton containerRef={ref} />
+    </div>
+  );
+}
+function PSection({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  return (
+    <div ref={ref} className="relative group/section">
+      <p className="my-3 leading-[1.85] text-[17px]">{children}</p>
+      <SectionCopyButton containerRef={ref} />
+    </div>
+  );
+}
+function BlockquoteSection({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  return (
+    <div ref={ref} className="relative group/section">
+      <blockquote className="my-3 pl-3 border-l-2 border-[--border] text-[--muted-foreground] italic">{children}</blockquote>
+      <SectionCopyButton containerRef={ref} />
+    </div>
+  );
+}
+
 // ─── Markdown renderer with enhanced styling ───
 
 function MarkdownContent({ content }: { content: string }) {
@@ -204,11 +289,11 @@ function MarkdownContent({ content }: { content: string }) {
         components={{
           table: ({ children }) => (
             <div className="my-3 overflow-x-auto rounded-lg border border-[--border]">
-              <table className="w-full text-[13px] border-collapse">{children}</table>
+              <table className="w-full text-[14px] border-collapse">{children}</table>
             </div>
           ),
           thead: ({ children }) => (
-            <thead className="bg-[--muted] text-[--muted-foreground] text-[12px] font-semibold uppercase tracking-wider">{children}</thead>
+            <thead className="bg-[--muted] text-[--muted-foreground] text-[13px] font-semibold uppercase tracking-wider">{children}</thead>
           ),
           th: ({ children }) => (
             <th className="px-3 py-2 text-left border-b border-[--border]">{children}</th>
@@ -230,31 +315,27 @@ function MarkdownContent({ content }: { content: string }) {
                     </span>
                     <CopyButton text={String(children).replace(/\n$/, "")} label="复制" />
                   </div>
-                  <code className="block px-4 py-3 bg-[#111] text-[13px] text-slate-200 rounded-b-lg overflow-x-auto font-mono leading-relaxed" {...props}>
+                  <code className="block px-4 py-3 bg-[#111] text-[14px] text-slate-200 rounded-b-lg overflow-x-auto font-mono leading-relaxed" {...props}>
                     {children}
                   </code>
                 </div>
               );
             }
             return (
-              <code className="px-1.5 py-0.5 rounded bg-[--muted] text-[--foreground] text-[13px] font-mono" {...props}>
+              <code className="px-1.5 py-0.5 rounded bg-[--muted] text-[--foreground] text-[14px] font-mono" {...props}>
                 {children}
               </code>
             );
           },
           pre: ({ children }) => <>{children}</>,
-          h1: ({ children }) => <h1 className="text-[20px] font-bold mt-6 mb-3 text-[--foreground]">{children}</h1>,
-          h2: ({ children }) => <h2 className="text-[18px] font-bold mt-5 mb-2.5 text-[--foreground]">{children}</h2>,
-          h3: ({ children }) => <h3 className="text-[16px] font-semibold mt-4 mb-2 text-[--foreground]">{children}</h3>,
-          ul: ({ children }) => <ul className="my-2.5 pl-5 space-y-1 list-disc marker:text-[--muted-foreground]">{children}</ul>,
-          ol: ({ children }) => <ol className="my-2.5 pl-5 space-y-1 list-decimal marker:text-[--muted-foreground]">{children}</ol>,
-          li: ({ children }) => <li className="text-[15px] leading-[1.7]">{children}</li>,
-          p: ({ children }) => <p className="my-2.5 leading-[1.75]">{children}</p>,
-          blockquote: ({ children }) => (
-            <blockquote className="my-3 pl-3 border-l-2 border-[--border] text-[--muted-foreground] italic">
-              {children}
-            </blockquote>
-          ),
+          h1: ({ children }) => <H1Section>{children}</H1Section>,
+          h2: ({ children }) => <H2Section>{children}</H2Section>,
+          h3: ({ children }) => <H3Section>{children}</H3Section>,
+          ul: ({ children }) => <ul className="my-3 pl-5 space-y-1.5 list-disc marker:text-[--muted-foreground]">{children}</ul>,
+          ol: ({ children }) => <ol className="my-3 pl-5 space-y-1.5 list-decimal marker:text-[--muted-foreground]">{children}</ol>,
+          li: ({ children }) => <li className="text-[17px] leading-[1.85]">{children}</li>,
+          p: ({ children }) => <PSection>{children}</PSection>,
+          blockquote: ({ children }) => <BlockquoteSection>{children}</BlockquoteSection>,
           strong: ({ children }) => <strong className="font-semibold text-[--foreground]">{children}</strong>,
           a: ({ href, children }) => (
             <a href={href} target="_blank" rel="noopener noreferrer" className="text-[--primary] underline underline-offset-2 hover:text-[--primary]/80 transition-colors">
@@ -272,14 +353,15 @@ function MarkdownContent({ content }: { content: string }) {
 
 // ─── Main component ───
 
-export default function MessageBubble({ message, onRetry }: Props) {
+export default function MessageBubble({ message, onRetry, onEdit }: Props) {
   const isUser = message.role === "user";
+  if (isUser) console.log("USER BUBBLE RENDERED", message.content);
   const isSystem = message.role === "system";
 
   if (isSystem) {
     return (
       <div className="flex justify-center py-2">
-        <span className="text-[12px] text-[--muted-foreground] bg-[--muted] px-3 py-1 rounded-full">
+        <span className="text-[13px] text-[--muted-foreground] bg-[--muted] px-3 py-1 rounded-full">
           {message.content}
         </span>
       </div>
@@ -292,24 +374,24 @@ export default function MessageBubble({ message, onRetry }: Props) {
   const hasChart = !!message.chart;
 
   return (
-    <div className={`group flex gap-3 py-2 ${isUser ? "justify-end" : "justify-start"}`}>
+    <div className={`group flex gap-3 py-3 ${isUser ? "justify-end" : "justify-start"}`}>
       {/* AI avatar */}
       {!isUser && (
-        <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[--muted]">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[--muted] border border-[--border]">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
           </svg>
         </div>
       )}
 
       <div className={`max-w-[88%] sm:max-w-[80%] ${isUser ? "order-first" : ""}`}>
-        {/* User message — simple bubble */}
+        {/* User message — right-aligned bubble */}
         {isUser ? (
-          <div className="px-4 py-3 text-[15px] leading-[1.7] rounded-xl rounded-tr-sm bg-[--muted] text-[--foreground]">
-            <p className="whitespace-pre-wrap leading-[1.7]">{message.content}</p>
+          <div style={{ background: "red", color: "white", padding: "20px 60px 20px 20px" }}>
+            <p className="whitespace-pre-wrap leading-[1.8]">{message.content}</p>
           </div>
         ) : (
-          /* AI message — layered structure */
+          /* AI message — flat, no box, like ChatGPT */
           <div className="text-[--foreground]">
             <div className="px-1 py-1">
               {/* Layer 1: Reasoning */}
@@ -331,20 +413,33 @@ export default function MessageBubble({ message, onRetry }: Props) {
           </div>
         )}
 
-        {/* Action buttons — visible on hover */}
-        <div className={`flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200 ${isUser ? "justify-end" : "justify-start"}`}>
-          <CopyButton text={message.content} label="复制" />
+        {/* Action buttons — agent: always visible, user: hover only */}
+        <div className={`flex items-center gap-1 mt-1.5 ${isUser ? "justify-end opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200" : "justify-start"}`}>
+          {hasContent && <CopyButton text={message.content} label="复制" />}
           {!isUser && onRetry && (
             <button
               onClick={onRetry}
               aria-label="重新生成"
               className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] text-[--muted-foreground] hover:bg-[--accent] hover:text-[--foreground] transition-colors cursor-pointer"
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="23 4 23 10 17 10" />
                 <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
               </svg>
               重新生成
+            </button>
+          )}
+          {isUser && onEdit && (
+            <button
+              onClick={() => onEdit(message.content)}
+              aria-label="编辑并重新发送"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] text-[--muted-foreground] hover:bg-[--accent] hover:text-[--foreground] transition-colors cursor-pointer"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+              编辑
             </button>
           )}
         </div>
