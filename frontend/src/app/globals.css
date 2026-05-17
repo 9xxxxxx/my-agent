@@ -317,17 +317,6 @@ a,
   background: var(--muted) / 30%;
 }
 
-/* ─── User message bubble ─── */
-#user-msg-bubble {
-  padding: 12px 4px 12px 16px !important;
-  background: #f0f0f0 !important;
-  border-radius: 16px 16px 16px 4px !important;
-  color: var(--foreground) !important;
-  display: flex !important;
-  align-items: center !important;
-  border: 3px solid red !important;
-}
-
 /* ─── Animations ─── */
 
 @keyframes message-enter {

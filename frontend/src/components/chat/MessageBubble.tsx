@@ -355,7 +355,6 @@ function MarkdownContent({ content }: { content: string }) {
 
 export default function MessageBubble({ message, onRetry, onEdit }: Props) {
   const isUser = message.role === "user";
-  if (isUser) console.log("USER BUBBLE RENDERED", message.content);
   const isSystem = message.role === "system";
 
   if (isSystem) {
@@ -387,7 +386,7 @@ export default function MessageBubble({ message, onRetry, onEdit }: Props) {
       <div className={`max-w-[88%] sm:max-w-[80%] ${isUser ? "order-first" : ""}`}>
         {/* User message — right-aligned bubble */}
         {isUser ? (
-          <div style={{ background: "red", color: "white", padding: "20px 60px 20px 20px" }}>
+          <div style={{ background: "#f0f0f0", color: "var(--foreground)", padding: "12px 8px 12px 16px", borderRadius: "16px 16px 16px 4px" }}>
             <p className="whitespace-pre-wrap leading-[1.8]">{message.content}</p>
           </div>
         ) : (
