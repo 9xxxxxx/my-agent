@@ -43,3 +43,5 @@
 - Added `MessageBlocks` and simplified `MessageBubble` around typed response blocks.
 - Fixed `InputBar` edit-mode state so it no longer trips React 19 `set-state-in-effect` lint.
 - Focused lint for the new shell/message/InputBar files passes; `pnpm build` passes.
+- Cleaned remaining frontend lint errors in settings and connection profile migration.
+- Full `pnpm lint`, focused Vitest message tests, and `pnpm build` pass.

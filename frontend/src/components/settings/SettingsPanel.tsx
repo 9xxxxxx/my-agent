@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useConnectionStore, type DBType, type LLMProfile, type DBProfile } from "@/stores/connection";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { testConnection } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -18,17 +18,42 @@ const DB_TYPES: { value: DBType; label: string; color: string }[] = [
   { value: "duckdb", label: "DuckDB", color: "#FFC107" },
 ];
 
-const PROVIDERS: { key: string; label: string; color: string }[] = [
+type LLMProvider = LLMProfile["config"]["provider"];
+type LLMProfilePatch = Partial<Omit<LLMProfile, "id" | "createdAt">>;
+type DBProfilePatch = Partial<Omit<DBProfile, "id" | "createdAt">>;
+type ServerDBConfig = Extract<DBProfile["config"], { type: "postgresql" | "mysql" }>;
+type FileDBConfig = Extract<DBProfile["config"], { type: "sqlite" | "duckdb" }>;
+
+const PROVIDERS: { key: LLMProvider; label: string; color: string }[] = [
   { key: "deepseek", label: "DeepSeek", color: "#3b82f6" },
   { key: "openai", label: "OpenAI", color: "#10b981" },
   { key: "custom", label: "自定义", color: "#8b5cf6" },
 ];
 
-const PROVIDER_DEFAULTS: Record<string, { baseUrl: string; model: string }> = {
+const PROVIDER_DEFAULTS: Record<LLMProvider, { baseUrl: string; model: string }> = {
   deepseek: { baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
   openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-4o" },
   custom: { baseUrl: "", model: "" },
 };
+
+function isServerDBConfig(config: DBProfile["config"]): config is ServerDBConfig {
+  return config.type === "postgresql" || config.type === "mysql";
+}
+
+function defaultDBConfig(type: DBType): DBProfile["config"] {
+  if (type === "sqlite" || type === "duckdb") {
+    return { type, filePath: "" } satisfies FileDBConfig;
+  }
+
+  return {
+    type,
+    host: "localhost",
+    port: type === "mysql" ? "3306" : "5432",
+    user: "",
+    password: "",
+    database: "",
+  } satisfies ServerDBConfig;
+}
 
 // ─── Chip row component ───
 function ChipRow<T extends { id: string; name: string }>({
@@ -99,10 +124,6 @@ export default function SettingsPanel({ onClose }: { onClose?: () => void }) {
   const [activeTab, setActiveTab] = useState<"general" | "llm" | "db">("general");
 
   if (!llmProfile || !dbProfile) return null;
-
-  const llm = llmProfile.config;
-  const db = dbProfile.config;
-  const isServerDB = db.type === "postgresql" || db.type === "mysql";
 
   const handleTestConnection = async () => {
     const url = assembleDbUrl(dbProfile);
@@ -278,7 +299,7 @@ function LLMPanel({
   onCreate: (name: string) => string;
   onDelete: (id: string) => void;
   onActivate: (id: string) => void;
-  onUpdate: (patch: any) => void;
+  onUpdate: (patch: LLMProfilePatch) => void;
 }) {
   const llm = profile.config;
   const isActive = profile.id === activeId;
@@ -321,7 +342,7 @@ function LLMPanel({
               {PROVIDERS.map((p) => {
                 const sel = llm.provider === p.key;
                 return (
-                  <button key={p.key} onClick={() => onUpdate({ config: { ...llm, provider: p.key as any, ...PROVIDER_DEFAULTS[p.key] } })}
+                  <button key={p.key} onClick={() => onUpdate({ config: { ...llm, provider: p.key, ...PROVIDER_DEFAULTS[p.key] } })}
                     role="radio" aria-checked={sel}
                     className={`flex flex-col items-center gap-2 py-3 rounded-lg border transition-all duration-150 cursor-pointer ${sel ? "border-[--primary] bg-[--primary]/[0.03]" : "border-transparent bg-[--muted] hover:bg-[--border]"}`}>
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[14px] font-bold text-white transition-transform duration-150 ${sel ? "scale-105" : ""}`}
@@ -395,13 +416,13 @@ function DBPanel({
   onCreate: (name: string) => string;
   onDelete: (id: string) => void;
   onActivate: (id: string) => void;
-  onUpdate: (patch: any) => void;
+  onUpdate: (patch: DBProfilePatch) => void;
   onTest: () => void;
   onResetTest: () => void;
 }) {
   const db = profile.config;
   const isActive = profile.id === activeId;
-  const isServerDB = db.type === "postgresql" || db.type === "mysql";
+  const isServerDB = isServerDBConfig(db);
 
   return (
     <div className="space-y-5">
@@ -440,8 +461,7 @@ function DBPanel({
             const sel = db.type === t.value;
             return (
               <button key={t.value} onClick={() => {
-                if (t.value === "sqlite" || t.value === "duckdb") onUpdate({ config: { ...db, type: t.value, filePath: "" } as any });
-                else onUpdate({ config: { ...db, type: t.value, host: "localhost", port: t.value === "mysql" ? "3306" : "5432", user: "", password: "", database: "" } as any });
+                onUpdate({ config: defaultDBConfig(t.value) });
                 onResetTest();
               }} role="radio" aria-checked={sel}
                 className={`flex flex-col items-center gap-1.5 py-3 rounded-lg border transition-all duration-150 cursor-pointer ${sel ? "border-[--primary] bg-[--primary]/[0.03]" : "border-transparent bg-[--muted] hover:bg-[--border]"}`}>
@@ -459,19 +479,19 @@ function DBPanel({
           {isServerDB ? (
             <>
               <div className="grid grid-cols-[1fr_100px] sm:grid-cols-[1fr_120px] gap-3">
-                <div><label htmlFor="db-host" className={labelCls}>主机</label><input id="db-host" value={(db as any).host || ""} onChange={(e) => onUpdate({ config: { ...db, host: e.target.value } as any })} placeholder="localhost" className={`mt-2 ${fieldCls}`} /></div>
-                <div><label htmlFor="db-port" className={labelCls}>端口</label><input id="db-port" value={(db as any).port || ""} onChange={(e) => onUpdate({ config: { ...db, port: e.target.value } as any })} placeholder={db.type === "mysql" ? "3306" : "5432"} className={`mt-2 ${fieldCls}`} /></div>
+                <div><label htmlFor="db-host" className={labelCls}>主机</label><input id="db-host" value={db.host} onChange={(e) => onUpdate({ config: { ...db, host: e.target.value } })} placeholder="localhost" className={`mt-2 ${fieldCls}`} /></div>
+                <div><label htmlFor="db-port" className={labelCls}>端口</label><input id="db-port" value={db.port} onChange={(e) => onUpdate({ config: { ...db, port: e.target.value } })} placeholder={db.type === "mysql" ? "3306" : "5432"} className={`mt-2 ${fieldCls}`} /></div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div><label htmlFor="db-user" className={labelCls}>用户名</label><input id="db-user" value={(db as any).user || ""} onChange={(e) => onUpdate({ config: { ...db, user: e.target.value } as any })} placeholder="postgres" className={`mt-2 ${fieldCls}`} /></div>
-                <div><label htmlFor="db-pass" className={labelCls}>密码</label><input id="db-pass" type="password" value={(db as any).password || ""} onChange={(e) => onUpdate({ config: { ...db, password: e.target.value } as any })} placeholder="••••••" autoComplete="off" className={`mt-2 ${fieldCls}`} /></div>
+                <div><label htmlFor="db-user" className={labelCls}>用户名</label><input id="db-user" value={db.user} onChange={(e) => onUpdate({ config: { ...db, user: e.target.value } })} placeholder="postgres" className={`mt-2 ${fieldCls}`} /></div>
+                <div><label htmlFor="db-pass" className={labelCls}>密码</label><input id="db-pass" type="password" value={db.password} onChange={(e) => onUpdate({ config: { ...db, password: e.target.value } })} placeholder="••••••" autoComplete="off" className={`mt-2 ${fieldCls}`} /></div>
               </div>
-              <div><label htmlFor="db-name" className={labelCls}>数据库名</label><input id="db-name" value={(db as any).database || ""} onChange={(e) => onUpdate({ config: { ...db, database: e.target.value } as any })} placeholder="my_database" className={`mt-2 ${fieldCls}`} /></div>
+              <div><label htmlFor="db-name" className={labelCls}>数据库名</label><input id="db-name" value={db.database} onChange={(e) => onUpdate({ config: { ...db, database: e.target.value } })} placeholder="my_database" className={`mt-2 ${fieldCls}`} /></div>
             </>
           ) : (
             <div>
               <label htmlFor="db-file" className={labelCls}>{db.type === "sqlite" ? "SQLite 文件路径" : "DuckDB 文件路径"}</label>
-              <input id="db-file" value={(db as any).filePath || ""} onChange={(e) => onUpdate({ config: { ...db, filePath: e.target.value } as any })} placeholder={db.type === "sqlite" ? "/path/to/data.db" : "/path/to/data.duckdb"} className={`mt-2 ${fieldCls}`} />
+              <input id="db-file" value={db.filePath} onChange={(e) => onUpdate({ config: { ...db, filePath: e.target.value } })} placeholder={db.type === "sqlite" ? "/path/to/data.db" : "/path/to/data.duckdb"} className={`mt-2 ${fieldCls}`} />
             </div>
           )}
         </div>
