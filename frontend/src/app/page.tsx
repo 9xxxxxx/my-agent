@@ -361,7 +361,7 @@ function MobilePage() {
       <Dialog open={configOpen} onOpenChange={setConfigOpen}>
         <DialogContent
           showCloseButton={false}
-          className="!max-w-[1280px] w-[calc(100%-1rem)] sm:w-[calc(100%-2rem)] p-0 gap-0 rounded-2xl overflow-hidden border border-[--border] shadow-[0_24px_48px_rgba(0,0,0,0.08)] max-h-[90vh] lg:max-h-[85vh]"
+          className="!max-w-[1280px] w-[calc(100%-1rem)] sm:w-[calc(100%-2rem)] p-0 gap-0 rounded-xl overflow-hidden border border-[--border] shadow-lg max-h-[90vh] lg:max-h-[85vh]"
         >
           <DialogTitle className="sr-only">连接配置</DialogTitle>
           <SettingsPanel onClose={() => setConfigOpen(false)} />
@@ -556,7 +556,7 @@ function DesktopPage() {
         <>
           <div className="fixed inset-0 z-40" onClick={() => setContextMenu(null)} />
           <div
-            className="fixed z-50 w-36 rounded-xl bg-[--card] border border-[--border] shadow-xl py-1"
+            className="fixed z-50 w-36 rounded-lg bg-[--card] border border-[--border] shadow-md py-1"
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
             <button
@@ -585,7 +585,7 @@ function DesktopPage() {
       {/* Delete confirmation dialog */}
       {deletingId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setDeletingId(null)}>
-          <div className="bg-[--card] rounded-2xl border border-[--border] shadow-xl p-5 sm:p-6 max-w-sm w-full mx-3 sm:mx-4" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-[--card] rounded-xl border border-[--border] shadow-lg p-5 max-w-sm w-full mx-3" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-[15px] font-semibold text-[--foreground] mb-2">删除对话</h3>
             <p className="text-[13px] text-[--muted-foreground] mb-6">确定要删除这个对话吗？此操作无法撤销。</p>
             <div className="flex justify-end gap-3">
@@ -600,7 +600,7 @@ function DesktopPage() {
       <Dialog open={configOpen} onOpenChange={setConfigOpen}>
         <DialogContent
           showCloseButton={false}
-          className="!max-w-[1280px] w-[calc(100%-1rem)] sm:w-[calc(100%-2rem)] p-0 gap-0 rounded-2xl overflow-hidden border border-[--border] shadow-[0_24px_48px_rgba(0,0,0,0.08)] max-h-[90vh] lg:max-h-[85vh]"
+          className="!max-w-[1280px] w-[calc(100%-1rem)] sm:w-[calc(100%-2rem)] p-0 gap-0 rounded-xl overflow-hidden border border-[--border] shadow-lg max-h-[90vh] lg:max-h-[85vh]"
         >
           <DialogTitle className="sr-only">连接配置</DialogTitle>
           <SettingsPanel onClose={() => setConfigOpen(false)} />
@@ -608,15 +608,15 @@ function DesktopPage() {
       </Dialog>
 
       {/* Main area */}
-      <main className="relative z-10 flex min-w-0 flex-1 flex-col p-2 sm:p-3 lg:p-4">
-        <div className="flex flex-1 flex-col min-w-0 rounded-2xl border border-[--border] bg-[--card] shadow-[0_2px_8px_rgba(15,23,42,0.06),0_8px_32px_rgba(15,23,42,0.04)] overflow-hidden">
+      <main className="relative z-10 flex min-w-0 flex-1 flex-col">
+        <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
           {/* Header */}
-          <header className="sticky top-0 z-10 shrink-0 flex items-center justify-between px-5 py-3 border-b border-[--border] bg-[--card]">
-            <div className="flex items-center gap-3 min-w-0">
+          <header className="sticky top-0 z-10 shrink-0 flex items-center justify-between px-4 sm:px-5 py-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
                 aria-label={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
-                className="p-2 -ml-1 rounded-lg hover:bg-[--accent] text-[--muted-foreground] cursor-pointer"
+                className="p-1.5 -ml-1 rounded-md hover:bg-[--muted] text-[--muted-foreground] cursor-pointer"
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="3" x2="9" y2="21" />
@@ -626,31 +626,25 @@ function DesktopPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              {/* Status pills */}
-              <div className="flex items-center gap-1.5">
-                <span suppressHydrationWarning className="inline-flex items-center gap-1.5 rounded-full border border-[--border] bg-white/80 px-2.5 py-1 text-[10px] font-medium text-[--muted-foreground]">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                  </svg>
+              {/* Status indicators */}
+              <div className="hidden sm:flex items-center gap-2">
+                <span suppressHydrationWarning className="text-[12px] text-[--muted-foreground]">
                   {activeLLM?.config.model || "未配置"}
                 </span>
                 {mounted && activeDB && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50/70 px-2.5 py-1 text-[10px] font-medium text-emerald-700">
-                    <span className="relative flex h-2 w-2">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                      <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-                    </span>
+                  <span className="inline-flex items-center gap-1 text-[12px] text-[--muted-foreground]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[--success]" />
                     {activeDB.config.type}
                   </span>
                 )}
               </div>
 
-              {/* Action buttons */}
+              {/* Export button */}
               {mounted && activeConv && activeConv.messages.length > 0 && (
                 <button
                   onClick={() => handleShare(activeConv.id)}
                   aria-label="导出对话"
-                  className="rounded-full border border-[--border] bg-white/90 p-2 text-[--muted-foreground] transition hover:border-[--primary]/30 hover:bg-[--primary]/5 hover:text-[--primary] cursor-pointer"
+                  className="p-1.5 rounded-md text-[--muted-foreground] hover:bg-[--muted] hover:text-[--foreground] transition-colors cursor-pointer"
                 >
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><polyline points="16 6 12 2 8 6" /><line x1="12" y1="2" x2="12" y2="15" />
