@@ -1,13 +1,18 @@
 """SQLAlchemy 引擎管理 + 连接池"""
 import os
+import logging
+import threading
 from contextvars import ContextVar, Token
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session
 import pandas as pd
 from core.config import settings
 from core.models import Base
 
+logger = logging.getLogger(__name__)
+
 _engine_cache: dict[str, any] = {}
+_engine_lock = threading.Lock()
 
 # Per-request database URL override (set by API layer)
 _current_db_url: ContextVar[str | None] = ContextVar("current_db_url", default=None)
@@ -24,7 +29,17 @@ def get_app_engine():
     global _app_engine
     if _app_engine is None:
         os.makedirs(_DB_DIR, exist_ok=True)
-        _app_engine = create_engine(_APP_DB_URL)
+        _app_engine = create_engine(
+            _APP_DB_URL,
+            connect_args={"check_same_thread": False},
+        )
+        # Enable WAL mode and busy timeout for concurrent access
+        @event.listens_for(_app_engine, "connect")
+        def _set_sqlite_pragma(dbapi_conn, connection_record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            cursor.close()
     return _app_engine
 
 
@@ -50,17 +65,19 @@ def reset_current_db_url(token: Token[str | None]) -> None:
 
 
 def get_engine_by_url(url: str):
-    if url not in _engine_cache:
-        sync_url = url.replace("+asyncpg", "+psycopg2")
-        engine = create_engine(
-            sync_url,
-            pool_size=5,
-            max_overflow=10,
-            pool_timeout=30,
-            pool_recycle=1800,
-        )
-        _engine_cache[url] = engine
-    return _engine_cache[url]
+    with _engine_lock:
+        if url not in _engine_cache:
+            sync_url = url.replace("+asyncpg", "+psycopg2")
+            engine = create_engine(
+                sync_url,
+                pool_size=5,
+                max_overflow=10,
+                pool_timeout=30,
+                pool_recycle=1800,
+                connect_args={"connect_timeout": 10},
+            )
+            _engine_cache[url] = engine
+        return _engine_cache[url]
 
 
 def get_engine(url: str | None = None):
@@ -77,7 +94,7 @@ def test_connection(url: str | None = None) -> tuple[bool, str | None]:
             conn.execute(text("SELECT 1"))
         return True, None
     except Exception as e:
-        print(f"Database connection error: {e}")
+        logger.warning("Database connection error: %s", e)
         return False, str(e)
 
 

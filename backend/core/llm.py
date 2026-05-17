@@ -14,7 +14,10 @@ def create_llm_model(
     url = base_url or settings.OPENAI_API_BASE
     name = model_name or settings.OPENAI_MODEL
 
-    client = AsyncOpenAI(api_key=key, base_url=url)
+    if not key:
+        raise ValueError("未配置 LLM API Key。请在设置中配置 API Key，或设置 OPENAI_API_KEY 环境变量。")
+
+    client = AsyncOpenAI(api_key=key, base_url=url, timeout=120.0, max_retries=2)
 
     # 始终回传 reasoning_content，兼容 DeepSeek 等 reasoning 模型
     return OpenAIChatCompletionsModel(

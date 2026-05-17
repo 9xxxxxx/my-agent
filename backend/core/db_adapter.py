@@ -1,8 +1,11 @@
 """多数据库适配层：PostgreSQL / MySQL / SQLite / DuckDB"""
+import logging
 from abc import ABC, abstractmethod
 from typing import Optional
 import pandas as pd
 from sqlalchemy import text, inspect
+
+logger = logging.getLogger(__name__)
 
 
 class DatabaseAdapter(ABC):
@@ -44,11 +47,18 @@ class DatabaseAdapter(ABC):
         }
 
     def get_sample_data(self, table_name: str, schema: Optional[str] = None, limit: int = 3) -> pd.DataFrame:
-        qualified = f'"{schema}"."{table_name}"' if schema else f'"{table_name}"'
+        # Escape double quotes in identifiers
+        safe_table = table_name.replace('"', '""')
+        if schema:
+            safe_schema = schema.replace('"', '""')
+            qualified = f'"{safe_schema}"."{safe_table}"'
+        else:
+            qualified = f'"{safe_table}"'
         query = f"SELECT * FROM {qualified} LIMIT {limit}"
         try:
             return pd.read_sql_query(query, con=self.engine)
-        except Exception:
+        except Exception as e:
+            logger.warning("Failed to get sample data for %s.%s: %s", schema, table_name, e)
             return pd.DataFrame()
 
     def has_table(self, table_name: str, schema: Optional[str] = None) -> bool:
@@ -107,7 +117,8 @@ class MySQLAdapter(DatabaseAdapter):
                 views = self.inspector.get_view_names(schema=s)
                 all_tables += [{"schema": s, "table": t, "type": "TABLE"} for t in tables]
                 all_tables += [{"schema": s, "table": v, "type": "VIEW"} for v in views]
-            except Exception:
+            except Exception as e:
+                logger.warning("Failed to list tables for schema %s: %s", s, e)
                 continue
         return all_tables
 
@@ -133,10 +144,12 @@ class SQLiteAdapter(DatabaseAdapter):
         return super().describe_table(table_name, schema=None)
 
     def get_sample_data(self, table_name: str, schema: Optional[str] = None, limit: int = 3) -> pd.DataFrame:
-        query = f'SELECT * FROM "{table_name}" LIMIT {limit}'
+        safe_table = table_name.replace('"', '""')
+        query = f'SELECT * FROM "{safe_table}" LIMIT {limit}'
         try:
             return pd.read_sql_query(query, con=self.engine)
-        except Exception:
+        except Exception as e:
+            logger.warning("Failed to get sample data for %s: %s", table_name, e)
             return pd.DataFrame()
 
 
@@ -176,5 +189,7 @@ _ADAPTER_MAP = {
 
 def get_adapter(engine) -> DatabaseAdapter:
     dialect_name = engine.dialect.name
-    adapter_cls = _ADAPTER_MAP.get(dialect_name, PostgreSQLAdapter)
+    adapter_cls = _ADAPTER_MAP.get(dialect_name)
+    if adapter_cls is None:
+        raise ValueError(f"不支持的数据库类型: {dialect_name}。支持: {', '.join(_ADAPTER_MAP.keys())}")
     return adapter_cls(engine)

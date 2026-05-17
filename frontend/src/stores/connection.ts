@@ -339,13 +339,13 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       saveJSON(LLM_ACTIVE, activeId);
       return { llmProfiles, activeLLMId: activeId, editingLLMId: editingId };
     });
-    deleteLLMProfileApi(id);
+    void deleteLLMProfileApi(id);
   },
 
   setActiveLLM: (id) => {
     set({ activeLLMId: id });
     saveJSON(LLM_ACTIVE, id);
-    activateLLMProfile(id);
+    void activateLLMProfile(id);
   },
 
   setEditingLLM: (id) => set({ editingLLMId: id }),
@@ -413,13 +413,13 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       saveJSON(DB_ACTIVE, activeId);
       return { dbProfiles, activeDBId: activeId, editingDBId: editingId };
     });
-    deleteDBProfileApi(id);
+    void deleteDBProfileApi(id);
   },
 
   setActiveDB: (id) => {
     set({ activeDBId: id });
     saveJSON(DB_ACTIVE, id);
-    activateDBProfile(id);
+    void activateDBProfile(id);
   },
 
   setEditingDB: (id) => set({ editingDBId: id }),

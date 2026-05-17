@@ -1,4 +1,5 @@
 """数据库连接测试端点"""
+import asyncio
 from fastapi import APIRouter
 from pydantic import BaseModel
 from core.database import test_connection
@@ -16,7 +17,7 @@ class TestDBResponse(BaseModel):
 
 
 @router.post("/api/db/test", response_model=TestDBResponse)
-async def test_db(req: TestDBRequest):
+def test_db(req: TestDBRequest):
     """测试数据库连接是否可用"""
     try:
         ok, error_msg = test_connection(req.database_url)

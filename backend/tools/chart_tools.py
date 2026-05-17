@@ -1,8 +1,12 @@
 """ECharts 图表配置生成工具"""
+import json
+import logging
 from agents import function_tool
 from core.database import run_query_to_dataframe
 from core.file_loader import query_file
-import json
+from core.sql_safety import is_select_only
+
+logger = logging.getLogger(__name__)
 
 
 CHART_TYPES = {
@@ -50,7 +54,7 @@ def _build_echarts_option(
                 groups.setdefault(r.get(series_field, ""), []).append(r)
             base["series"] = []
             base["legend"] = {"data": list(groups.keys()), "bottom": 0}
-            base["xAxis"]["data"] = list({r.get(x_field, "") for r in data_records})
+            base["xAxis"]["data"] = list(dict.fromkeys(r.get(x_field, "") for r in data_records))
             for group_name, records in groups.items():
                 base["series"].append({
                     "type": series_type, "name": group_name,
@@ -181,9 +185,9 @@ def create_chart(
         return f"错误: 不支持的图表类型 '{chart_type}'。支持: {supported}"
 
     # 安全检查
-    for kw in ["DROP ", "DELETE ", "UPDATE ", "INSERT ", "ALTER ", "TRUNCATE "]:
-        if kw in sql_query.upper():
-            return f"错误: 禁止执行含有 {kw.strip()} 的语句。"
+    ok, err = is_select_only(sql_query)
+    if not ok:
+        return f"错误: {err}。仅允许 SELECT 查询。"
 
     try:
         if data_source == "file":
@@ -222,4 +226,5 @@ def create_chart(
         option = _build_echarts_option(records, chart_type, title, x_fixed, y_fixed, series_fixed or "")
         return f"[ECHARTS_CHART] {json.dumps(option, ensure_ascii=False)}"
     except Exception as e:
-        return f"图表生成错误: {e}"
+        logger.warning("Chart generation error: %s", e)
+        return "图表生成错误，请检查 SQL 查询和图表配置。"

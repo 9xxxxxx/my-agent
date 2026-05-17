@@ -1,7 +1,11 @@
 """数据库探索工具：schema 发现、表结构查看、SQL 执行"""
+import logging
 from agents import function_tool
 from core.database import get_engine, run_query_to_dataframe
 from core.db_adapter import get_adapter
+from core.sql_safety import is_select_only
+
+logger = logging.getLogger(__name__)
 
 
 @function_tool
@@ -22,7 +26,8 @@ def list_schemas(database_url: str = "") -> str:
             result += f"  - {s}\n"
         return result
     except Exception as e:
-        return f"获取 Schema 列表失败: {e}"
+        logger.warning("Failed to list schemas: %s", e)
+        return "获取 Schema 列表失败，请检查数据库连接。"
 
 
 @function_tool
@@ -50,7 +55,8 @@ def list_tables(schema_name: str = "", database_url: str = "") -> str:
             result += "\n"
         return result
     except Exception as e:
-        return f"获取表列表失败: {e}"
+        logger.warning("Failed to list tables: %s", e)
+        return "获取表列表失败，请检查数据库连接。"
 
 
 @function_tool
@@ -94,17 +100,16 @@ def describe_table(table_name: str, schema_name: str = "", database_url: str = "
             output.append(f"\n警告: 无法获取采样数据 ({e})")
         return "\n".join(output)
     except Exception as e:
-        return f"获取表结构失败: {e}"
+        logger.warning("Failed to describe table: %s", e)
+        return "获取表结构失败，请检查表名是否正确。"
 
 
 @function_tool
 def run_sql_query(query: str, database_url: str = "") -> str:
     """执行 SELECT SQL 查询并返回最多前 100 条结果。仅允许 SELECT 查询。"""
-    dangerous = ["DROP ", "DELETE ", "UPDATE ", "INSERT ", "ALTER ", "TRUNCATE ", "CREATE ", "GRANT "]
-    query_upper = query.upper()
-    for kw in dangerous:
-        if kw in query_upper:
-            return f"错误: 禁止执行含有 {kw.strip()} 的语句。仅允许 SELECT 查询。"
+    ok, err = is_select_only(query)
+    if not ok:
+        return f"错误: {err}。仅允许 SELECT 查询。"
     try:
         df = run_query_to_dataframe(query, database_url or None)
         if df.empty:
@@ -115,4 +120,5 @@ def run_sql_query(query: str, database_url: str = "") -> str:
             return f"{header}:\n" + df.head(100).to_string(index=False)
         return f"{header}:\n" + df.to_string(index=False)
     except Exception as e:
-        return f"SQL 执行错误: {e}\n请检查 SQL 语法，若列名不确定请先使用 describe_table 确认。"
+        logger.warning("SQL execution error: %s", e)
+        return "SQL 执行错误，请检查 SQL 语法。若列名不确定请先使用 describe_table 确认。"

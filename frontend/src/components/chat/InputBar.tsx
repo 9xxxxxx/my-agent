@@ -19,7 +19,8 @@ export default function InputBar({ onSend, disabled, defaultValue }: Props) {
 
   useEffect(() => {
     if (defaultValue) {
-      setTimeout(() => textareaRef.current?.focus(), 50);
+      const id = setTimeout(() => textareaRef.current?.focus(), 50);
+      return () => clearTimeout(id);
     }
   }, [defaultValue]);
 

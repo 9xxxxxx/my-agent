@@ -43,7 +43,7 @@ function ToolBlock({ block }: { block: Extract<ResponseBlock, { type: "tool" }> 
       </summary>
       {(block.input || block.outputPreview) && (
         <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-[--card] p-2 text-[11px] leading-relaxed">
-          {block.outputPreview || String(block.input)}
+          {block.outputPreview || (typeof block.input === "object" ? JSON.stringify(block.input, null, 2) : String(block.input ?? ""))}
         </pre>
       )}
     </details>

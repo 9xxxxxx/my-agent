@@ -342,7 +342,7 @@ function LLMPanel({
               {PROVIDERS.map((p) => {
                 const sel = llm.provider === p.key;
                 return (
-                  <button key={p.key} onClick={() => onUpdate({ config: { ...llm, provider: p.key, ...PROVIDER_DEFAULTS[p.key] } })}
+                  <button key={p.key} onClick={() => onUpdate({ config: { ...llm, provider: p.key, baseUrl: llm.baseUrl || PROVIDER_DEFAULTS[p.key].baseUrl, model: llm.model || PROVIDER_DEFAULTS[p.key].model } })}
                     role="radio" aria-checked={sel}
                     className={`flex flex-col items-center gap-2 py-3 rounded-lg border transition-all duration-150 cursor-pointer ${sel ? "border-[--primary] bg-[--primary]/[0.03]" : "border-transparent bg-[--muted] hover:bg-[--border]"}`}>
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[14px] font-bold text-white transition-transform duration-150 ${sel ? "scale-105" : ""}`}

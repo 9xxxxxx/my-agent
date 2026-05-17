@@ -39,10 +39,21 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
   const [editContent, setEditContent] = useState<string | null>(null);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    const el = scrollRef.current;
+    if (!el) return;
+    // Only auto-scroll if user is near the bottom (within 150px)
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+    if (isNearBottom) {
+      el.scrollTop = el.scrollHeight;
     }
   }, [messages]);
+
+  // Abort stream on unmount
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -162,9 +173,8 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
     const lastUser = [...msgs].reverse().find((m) => m.role === "user");
     if (!lastUser) return;
     removeLastAssistant();
-    window.setTimeout(() => {
-      void handleSend(messageToPlainText(lastUser));
-    }, 50);
+    // handleSend reads from useChatStore.getState(), so no setTimeout needed
+    void handleSend(messageToPlainText(lastUser));
   }, [handleSend, removeLastAssistant]);
 
   return (

@@ -128,6 +128,21 @@ function saveConversations(conversations: Conversation[]) {
   }
 }
 
+// Debounced save for high-frequency streaming updates
+let _saveTimeout: ReturnType<typeof setTimeout> | null = null;
+let _pendingConversations: Conversation[] | null = null;
+function saveConversationsDebounced(conversations: Conversation[]) {
+  _pendingConversations = conversations;
+  if (_saveTimeout) return;
+  _saveTimeout = setTimeout(() => {
+    _saveTimeout = null;
+    if (_pendingConversations) {
+      saveConversations(_pendingConversations);
+      _pendingConversations = null;
+    }
+  }, 500);
+}
+
 function saveActiveId(id: string | null) {
   if (typeof window !== "undefined") {
     if (id) localStorage.setItem(ACTIVE_KEY, id);
@@ -309,7 +324,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
         return { ...conversation, messages, updatedAt: Date.now() };
       });
-      saveConversations(conversations);
+      saveConversationsDebounced(conversations);
       return { conversations };
     }),
 
@@ -323,7 +338,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
         return { ...conversation, messages, updatedAt: Date.now() };
       });
-      saveConversations(conversations);
+      saveConversationsDebounced(conversations);
       return { conversations };
     }),
 
@@ -339,7 +354,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
         return { ...conversation, messages, updatedAt: Date.now() };
       });
-      saveConversations(conversations);
+      saveConversationsDebounced(conversations);
       return { conversations };
     }),
 
@@ -357,7 +372,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
         return { ...conversation, messages, updatedAt: Date.now() };
       });
-      saveConversations(conversations);
+      saveConversationsDebounced(conversations);
       return { conversations };
     }),
 
@@ -374,7 +389,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
         return { ...conversation, messages, updatedAt: Date.now() };
       });
-      saveConversations(conversations);
+      saveConversationsDebounced(conversations);
       return { conversations };
     }),
 

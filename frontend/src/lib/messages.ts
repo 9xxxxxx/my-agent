@@ -129,7 +129,14 @@ export function applyChatEvent(message: BlockMessage, event: ChatEvent): BlockMe
         ),
         updatedAt: now,
       };
-    case "chart":
+    case "chart": {
+      let option: Record<string, unknown> = {};
+      try {
+        option = JSON.parse(event.content ?? "{}") as Record<string, unknown>;
+      } catch {
+        // Malformed chart JSON - skip this block
+        return message;
+      }
       return {
         ...message,
         blocks: [
@@ -137,11 +144,12 @@ export function applyChatEvent(message: BlockMessage, event: ChatEvent): BlockMe
           {
             id: blockId(message.id, `chart-${message.blocks.length}`),
             type: "chart",
-            option: JSON.parse(event.content ?? "{}") as Record<string, unknown>,
+            option,
           },
         ],
         updatedAt: now,
       };
+    }
     case "agent_status":
       return {
         ...message,

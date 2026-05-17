@@ -91,6 +91,7 @@ export default function EChart({ option, height, palette: paletteProp }: EChartP
   const instanceRef = useRef<echarts.ECharts | null>(null);
   const [currentPalette, setCurrentPalette] = useState<PaletteKey>(paletteProp || "default");
 
+  // Init chart (only when palette changes or on mount)
   useEffect(() => {
     if (!chartRef.current) return;
 
@@ -103,8 +104,6 @@ export default function EChart({ option, height, palette: paletteProp }: EChartP
       renderer: "canvas",
     });
 
-    instanceRef.current.setOption(option as echarts.EChartsOption, { notMerge: true });
-
     const handleResize = () => instanceRef.current?.resize();
     window.addEventListener("resize", handleResize);
 
@@ -113,7 +112,14 @@ export default function EChart({ option, height, palette: paletteProp }: EChartP
       instanceRef.current?.dispose();
       instanceRef.current = null;
     };
-  }, [option, currentPalette]);
+  }, [currentPalette]);
+
+  // Update option (without disposing/recreating)
+  useEffect(() => {
+    if (instanceRef.current) {
+      instanceRef.current.setOption(option as echarts.EChartsOption, { notMerge: true });
+    }
+  }, [option]);
 
   const chartHeight = height ?? undefined;
 

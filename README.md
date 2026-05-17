@@ -235,15 +235,23 @@ my-agent/
 
 - Bearer Token 认证中间件
 - CORS 源配置
-- 路径遍历防护
+- 路径遍历防护（文件名清洗 + 路径校验）
 - API Key / 密码脱敏
-- SQL 注入防护（仅允许 SELECT）
+- SQL 注入防护（白名单验证：仅允许 SELECT/WITH/EXPLAIN/DESCRIBE，阻止注释绕过、多语句、DuckDB 危险命令）
+- 报告生成路径穿越防护（标题清洗 + 路径二次校验）
+- 上传文件大小限制（500MB）
+- 线程安全的数据库引擎缓存和 DuckDB 连接
+- SSE 流式客户端断连检测
+- LLM 连接超时与重试
+- 飞书/SMTP 请求超时（15s）
+- 邮箱格式校验 + 主题注入防护
+- 错误消息脱敏（不泄露内部异常详情）
 - 用户友好的错误信息
 
 ## 测试
 
 ```bash
-# 后端测试
+# 后端测试（28 个用例）
 cd backend
 uv run pytest tests -q
 

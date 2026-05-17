@@ -70,25 +70,44 @@ export async function* streamChat(
 
   const decoder = new TextDecoder();
   let buffer = "";
+  let dataLines: string[] = [];
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
 
-    for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        try {
-          const event = JSON.parse(line.slice(6)) as ChatEvent;
-          yield event;
-        } catch {
-          // skip malformed JSON
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          dataLines.push(line.slice(6));
+        } else if (line.trim() === "" && dataLines.length > 0) {
+          // Empty line = end of SSE event
+          try {
+            const event = JSON.parse(dataLines.join("\n")) as ChatEvent;
+            yield event;
+          } catch {
+            // skip malformed JSON
+          }
+          dataLines = [];
         }
       }
     }
+
+    // Process any remaining data in buffer
+    if (dataLines.length > 0) {
+      try {
+        const event = JSON.parse(dataLines.join("\n")) as ChatEvent;
+        yield event;
+      } catch {
+        // skip malformed JSON
+      }
+    }
+  } finally {
+    reader.releaseLock();
   }
 }
 
@@ -109,6 +128,10 @@ export async function uploadFile(file: File): Promise<{
     body: form,
   });
 
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || `上传失败: HTTP ${response.status}`);
+  }
   return response.json();
 }
 
@@ -118,6 +141,7 @@ export async function getUploadedTables(): Promise<{
   const headers: Record<string, string> = {};
   if (APP_TOKEN) headers["Authorization"] = `Bearer ${APP_TOKEN}`;
   const response = await fetch(`${API_BASE}/api/upload/tables`, { headers });
+  if (!response.ok) throw new Error(`获取文件列表失败: HTTP ${response.status}`);
   return response.json();
 }
 
@@ -130,6 +154,7 @@ export async function testConnection(databaseUrl: string): Promise<{
     headers: authHeaders(),
     body: JSON.stringify({ database_url: databaseUrl }),
   });
+  if (!response.ok) throw new Error(`连接测试失败: HTTP ${response.status}`);
   return response.json();
 }
 
@@ -163,11 +188,13 @@ interface ProfileRow {
 
 export async function fetchConversations(): Promise<ConversationSummary[]> {
   const res = await fetch(`${API_BASE}/api/conversations`);
+  if (!res.ok) throw new Error(`获取对话列表失败: HTTP ${res.status}`);
   return res.json();
 }
 
 export async function fetchConversation(id: string): Promise<ConversationDetail> {
   const res = await fetch(`${API_BASE}/api/conversations/${id}`);
+  if (!res.ok) throw new Error(`获取对话详情失败: HTTP ${res.status}`);
   return res.json();
 }
 
@@ -208,6 +235,7 @@ export async function deleteConversationApi(id: string): Promise<void> {
 
 export async function fetchLLMProfiles(): Promise<ProfileRow[]> {
   const res = await fetch(`${API_BASE}/api/connections/llm`);
+  if (!res.ok) throw new Error(`获取 LLM 配置失败: HTTP ${res.status}`);
   return res.json();
 }
 
@@ -251,6 +279,7 @@ export async function activateLLMProfile(id: string): Promise<void> {
 
 export async function fetchDBProfiles(): Promise<ProfileRow[]> {
   const res = await fetch(`${API_BASE}/api/connections/db`);
+  if (!res.ok) throw new Error(`获取数据库配置失败: HTTP ${res.status}`);
   return res.json();
 }
 

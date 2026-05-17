@@ -1,9 +1,12 @@
 """飞书 Webhook 推送 + 邮件发送工具"""
 import json
+import re
 import urllib.request
 from datetime import datetime
 from agents import function_tool
 from core.config import settings
+
+_EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
 
 
 @function_tool
@@ -86,7 +89,7 @@ def send_feishu_notification(
         data = json.dumps(card, ensure_ascii=False).encode("utf-8")
         req = urllib.request.Request(webhook_url, data=data)
         req.add_header("Content-Type", "application/json; charset=utf-8")
-        with urllib.request.urlopen(req) as response:
+        with urllib.request.urlopen(req, timeout=15) as response:
             result = json.loads(response.read().decode("utf-8"))
         if result.get("code") == 0 or result.get("StatusCode") == 0:
             return f"已成功推送到飞书群: {title}"
@@ -106,13 +109,21 @@ def send_email_notification(
     if not settings.SMTP_SERVER or not settings.SMTP_USERNAME:
         return "错误: 未配置 SMTP。请在 .env 中设置 SMTP_SERVER / SMTP_USERNAME / SMTP_PASSWORD。"
 
+    # Validate email address
+    if not _EMAIL_RE.match(to_address.strip()):
+        return f"错误: 无效的邮箱地址 '{to_address}'。"
+
+    # Validate subject (no newlines)
+    if "\n" in subject or "\r" in subject:
+        return "错误: 邮件主题不能包含换行符。"
+
     msg = MIMEText(body, "html", "utf-8")
     msg["From"] = settings.SMTP_USERNAME
-    msg["To"] = to_address
+    msg["To"] = to_address.strip()
     msg["Subject"] = subject
 
     try:
-        with smtplib.SMTP_SSL(settings.SMTP_SERVER, settings.SMTP_PORT) as server:
+        with smtplib.SMTP_SSL(settings.SMTP_SERVER, settings.SMTP_PORT, timeout=15) as server:
             server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
             server.send_message(msg)
         return f"邮件已成功发送至 {to_address}"

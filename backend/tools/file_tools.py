@@ -1,6 +1,10 @@
 """文件数据查询工具：通过 DuckDB 内存引擎查询已上传的文件数据"""
+import logging
 from agents import function_tool
 from core.file_loader import query_file, list_file_tables
+from core.sql_safety import is_select_only
+
+logger = logging.getLogger(__name__)
 
 
 @function_tool
@@ -20,11 +24,9 @@ def list_uploaded_files() -> str:
 def query_uploaded_file(sql: str) -> str:
     """对已上传的数据文件执行 SQL 查询。表名即为文件注册名（通过 list_uploaded_files 查看）。
     支持标准 SQL 语法（DuckDB 方言），可 JOIN 多个文件表。"""
-    # 安全检查
-    dangerous = ["DROP ", "DELETE ", "UPDATE ", "INSERT ", "ALTER ", "TRUNCATE ", "CREATE "]
-    for kw in dangerous:
-        if kw in sql.upper():
-            return f"错误: 禁止执行含有 {kw.strip()} 的语句。"
+    ok, err = is_select_only(sql)
+    if not ok:
+        return f"错误: {err}。仅允许 SELECT 查询。"
     try:
         df = query_file(sql)
         if df.empty:
@@ -35,4 +37,5 @@ def query_uploaded_file(sql: str) -> str:
             return f"{header}:\n" + df.head(100).to_string(index=False)
         return f"{header}:\n" + df.to_string(index=False)
     except Exception as e:
-        return f"查询失败: {e}"
+        logger.warning("File query error: %s", e)
+        return "查询失败，请检查 SQL 语法。"

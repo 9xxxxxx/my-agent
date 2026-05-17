@@ -18,8 +18,13 @@ function formatDate(timestamp: number): string {
 }
 
 function preview(conversation: Conversation): string {
-  const last = [...conversation.messages].reverse().find((message) => message.role !== "system");
-  return last ? messageToPlainText(last).replace(/\s+/g, " ").slice(0, 54) : "还没有消息";
+  const msgs = conversation.messages;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role !== "system") {
+      return messageToPlainText(msgs[i]).replace(/\s+/g, " ").slice(0, 54);
+    }
+  }
+  return "还没有消息";
 }
 
 export function ConversationSidebar({
@@ -49,10 +54,13 @@ export function ConversationSidebar({
         {conversations.map((conversation) => {
           const active = conversation.id === activeId;
           return (
-            <button
+            <div
               key={conversation.id}
+              role="button"
+              tabIndex={0}
               onClick={() => onSelect(conversation.id)}
-              className={`group mb-1 grid w-full grid-cols-[1fr_auto] gap-2 rounded-md px-3 py-2 text-left transition-colors ${
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(conversation.id); } }}
+              className={`group mb-1 grid w-full grid-cols-[1fr_auto] gap-2 rounded-md px-3 py-2 text-left transition-colors cursor-pointer ${
                 active ? "bg-[--muted] text-[--foreground]" : "text-[--muted-foreground] hover:bg-[--muted]/70 hover:text-[--foreground]"
               }`}
             >
@@ -61,26 +69,18 @@ export function ConversationSidebar({
                 <span className="mt-0.5 block truncate text-[11px] opacity-75">{preview(conversation)}</span>
                 <span className="mt-1 block text-[10px] opacity-60">{formatDate(conversation.updatedAt)} · {conversation.messages.length} 条</span>
               </span>
-              <span
-                role="button"
-                tabIndex={0}
+              <button
+                type="button"
                 onClick={(event) => {
                   event.stopPropagation();
                   onDelete(conversation.id);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onDelete(conversation.id);
-                  }
                 }}
                 className="self-start rounded p-1 opacity-0 transition-opacity hover:bg-[--card] group-hover:opacity-100"
                 aria-label="删除对话"
               >
                 <Trash2 size={13} />
-              </span>
-            </button>
+              </button>
+            </div>
           );
         })}
       </div>

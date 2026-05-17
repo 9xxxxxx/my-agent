@@ -1,9 +1,12 @@
 """SSE 流式对话端点"""
+import asyncio
 import json
 import logging
+import traceback
+import uuid
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from agents import Runner
 from core.agent import create_agent_for_name, AGENT_DISPLAY_NAMES
 from core.llm import create_llm_model
@@ -27,8 +30,8 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    message: str
-    history: list[ChatMessage] | None = None
+    message: str = Field(..., max_length=100_000)
+    history: list[ChatMessage] | None = Field(None, max_length=200)
     model: str | None = None
     api_key: str | None = None
     base_url: str | None = None
@@ -45,7 +48,8 @@ async def chat(req: ChatRequest, request: Request):
         base_url=req.base_url,
         model_name=req.model,
     )
-    route = classify_intent(req.message)
+    # Run classify_intent in executor to avoid blocking the event loop
+    route = await asyncio.get_event_loop().run_in_executor(None, classify_intent, req.message)
     agent = create_agent_for_name(route.agent_name, model=llm_model)
     if req.instructions:
         agent.instructions = req.instructions
@@ -70,7 +74,7 @@ async def chat(req: ChatRequest, request: Request):
                     # SDK 的 Converter 会将其转为 reasoning_content 字段
                     if msg.reasoning and msg.reasoning.strip():
                         items.append({
-                            "id": "__fake_id__",
+                            "id": f"reasoning_{uuid.uuid4().hex[:12]}",
                             "type": "reasoning",
                             "summary": [{"text": msg.reasoning, "type": "summary_text"}],
                             "provider_data": {},
@@ -103,6 +107,11 @@ async def chat(req: ChatRequest, request: Request):
             current_agent_name = route.agent_name
 
             async for event in result.stream_events():
+                # Check for client disconnect
+                if await request.is_disconnected():
+                    logger.info("Client disconnected, stopping stream")
+                    break
+
                 if event.type == "raw_response_event":
                     dtype = getattr(event.data, "type", "")
 
@@ -146,10 +155,12 @@ async def chat(req: ChatRequest, request: Request):
 
             yield sse("done")
 
+        except asyncio.TimeoutError:
+            logger.warning("Chat stream timed out")
+            yield sse("error", code="TIMEOUT", message="请求超时，请稍后重试")
         except Exception as e:
-            import traceback
             logger.error("CHAT ERROR: %s\n%s", e, traceback.format_exc())
-            yield f"data: {json.dumps(safe_error_payload(e), ensure_ascii=False)}\n\n"
+            yield sse("error", **safe_error_payload(e))
         finally:
             if db_token is not None:
                 reset_current_db_url(db_token)
