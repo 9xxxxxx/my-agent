@@ -1,0 +1,24 @@
+# Progress Log
+
+## 2026-05-17
+- Committed the existing worktree as `e4a88bc feat: add persisted multi-agent data analysis UI`.
+- Detected remaining debug UI changes in `frontend/src/app/globals.css` and `frontend/src/components/chat/MessageBubble.tsx`.
+- Committed cleanup as `3a8b705 chore: remove debug message bubble styling`.
+- Started production-readiness audit and redesign planning.
+- Ran `pnpm lint`: failed with React lint, hook ordering, `any`, and unused-variable issues.
+- Ran `pnpm build`: passed.
+- Ran backend smoke imports: passed.
+- Read key frontend files around lint failures and state management.
+- Ran broad backend compile command; it passed but included `.venv`, so it is not suitable as a concise verification command.
+- Ran focused backend compile command: passed.
+- Ran shadcn info and captured project configuration.
+- Searched for risky patterns; found localStorage credential persistence and hard-coded CORS.
+- Recursive test discovery timed out after scanning generated dependencies; will use explicit exclusions next.
+- Confirmed existing services on ports 3000 and 8000 respond successfully.
+- Used browser at desktop and mobile viewport sizes to inspect actual layout.
+- Captured visual issues in responsive layout and response structure.
+- Read message rendering, chat SSE, API client, storage API, notification, and export code.
+- Logged security and reliability risks around paths, secrets, async email, and silent persistence failures.
+- Created visual companion page at `http://localhost:59768`.
+- User approved the recommended "Production Backbone First" direction with "go".
+- Wrote design spec at `docs/superpowers/specs/2026-05-17-production-readiness-redesign-design.md`.
