@@ -262,7 +262,7 @@ function LLMPanel({
             <div className="relative mt-2">
               <input id="llm-apikey" type={showKey ? "text" : "password"} value={llm.apiKey} onChange={(e) => onUpdate({ config: { ...llm, apiKey: e.target.value } })}
                 placeholder="sk-..." autoComplete="off" className={`${fieldCls} pr-16`} />
-              <button onClick={onToggleKey} type="button" className="absolute right-4 top-1/2 -translate-y-1/2 text-[12px] font-semibold text-[#3b82f6] hover:text-[#2563eb] cursor-pointer">{showKey ? "隐藏" : "显示"}</button>
+              <button onClick={onToggleKey} type="button" className="absolute right-4 top-1/2 -translate-y-1/2 text-[12px] font-semibold text-[--primary] hover:text-[--primary]/80 cursor-pointer">{showKey ? "隐藏" : "显示"}</button>
             </div>
           </section>
           <section>

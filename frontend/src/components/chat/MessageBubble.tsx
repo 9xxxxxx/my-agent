@@ -33,7 +33,7 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
       aria-label={copied ? "已复制" : "复制"}
       className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] transition-colors cursor-pointer ${
         copied
-          ? "bg-emerald-50 text-emerald-600"
+          ? "bg-[--success]/10 text-[--success]"
           : "text-[--muted-foreground] hover:bg-[--accent] hover:text-[--foreground]"
       }`}
     >
@@ -146,7 +146,7 @@ function ToolCallCard({ tool, index }: { tool: ToolCall; index: number }) {
         </span>
         <span className="text-[12px] font-mono font-medium text-[--foreground]">{tool.name}</span>
         {hasOutput && (
-          <span className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-500" title="已完成" />
+          <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[--success]" title="已完成" />
         )}
       </div>
 
@@ -164,7 +164,7 @@ function ToolCallCard({ tool, index }: { tool: ToolCall; index: number }) {
             参数
           </button>
           {showArgs && (
-            <pre className="px-3 py-2 text-[11px] text-[--muted-foreground] bg-emerald-50/30 border-t border-emerald-200/30 overflow-x-auto font-mono leading-relaxed">
+            <pre className="px-3 py-2 text-[11px] text-[--muted-foreground] bg-[--muted]/30 border-t border-[--border]/30 overflow-x-auto font-mono leading-relaxed">
               {formattedArgs}
             </pre>
           )}
@@ -185,7 +185,7 @@ function ToolCallCard({ tool, index }: { tool: ToolCall; index: number }) {
             结果
           </button>
           {showOutput && (
-            <pre className="px-3 py-2 text-[11px] text-[--muted-foreground] bg-emerald-50/30 border-t border-emerald-200/30 overflow-x-auto font-mono leading-relaxed max-h-[200px] overflow-y-auto whitespace-pre-wrap">
+            <pre className="px-3 py-2 text-[11px] text-[--muted-foreground] bg-[--muted]/30 border-t border-[--border]/30 overflow-x-auto font-mono leading-relaxed max-h-[200px] overflow-y-auto whitespace-pre-wrap">
               {displayOutput}
             </pre>
           )}
