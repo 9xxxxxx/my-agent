@@ -18,6 +18,7 @@ out/
 .vscode/
 .idea/
 .superpowers/
+.worktrees
 .worktrees/
 
 # OS

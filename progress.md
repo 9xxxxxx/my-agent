@@ -27,3 +27,4 @@
 - Read current Next 16 App Router docs for pages plus server/client component boundaries before planning frontend changes.
 - Wrote implementation plan at `docs/superpowers/plans/2026-05-17-production-readiness-redesign.md`.
 - Added `.worktrees/` to `.gitignore` so isolated implementation worktrees do not pollute git status.
+- Worktree ignore verification failed for the directory path itself; added `.worktrees` alongside `.worktrees/`.
