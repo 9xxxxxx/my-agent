@@ -8,7 +8,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-mono: var(--font-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -46,41 +46,73 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Depth shadow tokens — subtle elevation */
+  --shadow-depth-1: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-depth-2: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-depth-3: 0 4px 16px rgba(0, 0, 0, 0.08);
 }
 
+/*
+ * Design System: Linear-style Minimalist
+ * Style: Pure white surfaces, subtle gray hierarchy, minimal borders
+ * Font: Inter (16px base), JetBrains Mono (code)
+ * Spacing: 4px grid, generous whitespace
+ * Depth: Shadow-based elevation on pure white
+ */
+
 :root {
-  --background: #f9f9f7;
+  /* Surfaces — layered depth */
+  --background: #ffffff;
   --foreground: #1a1a1a;
+
+  /* Cards — same as background, elevated via shadow */
   --card: #ffffff;
   --card-foreground: #1a1a1a;
   --popover: #ffffff;
   --popover-foreground: #1a1a1a;
-  --primary: #2d2d2d;
-  --primary-foreground: #fafaf8;
-  --secondary: #f0efed;
-  --secondary-foreground: #3a3a3a;
-  --muted: #f0efed;
-  --muted-foreground: #7a7a72;
-  --accent: #e8e7e4;
-  --accent-foreground: #2d2d2d;
-  --destructive: #c45040;
-  --border: #e5e4e1;
-  --input: #e5e4e1;
-  --ring: #b0afa8;
-  --chart-1: #5a7c6f;
-  --chart-2: #8b7355;
-  --chart-3: #6b7fa3;
-  --chart-4: #a37486;
-  --chart-5: #7a9e8e;
+
+  /* Brand — blue only for primary actions */
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+
+  /* Secondary & Muted — gray hierarchy */
+  --secondary: #f5f5f5;
+  --secondary-foreground: #555555;
+  --muted: #f5f5f5;
+  --muted-foreground: #888888;
+
+  /* Accent */
+  --accent: #f5f5f5;
+  --accent-foreground: #1a1a1a;
+
+  /* Feedback */
+  --destructive: #ef4444;
+  --success: #22c55e;
+
+  /* Structure — minimal borders */
+  --border: #eaeaea;
+  --input: #eaeaea;
+  --ring: #2563eb;
+
+  /* Chart — distinguishable */
+  --chart-1: #2563eb;
+  --chart-2: #059669;
+  --chart-3: #f59e0b;
+  --chart-4: #ef4444;
+  --chart-5: #8b5cf6;
+
   --radius: 0.5rem;
-  --sidebar: #f4f3f1;
-  --sidebar-foreground: #3a3a3a;
-  --sidebar-primary: #2d2d2d;
-  --sidebar-primary-foreground: #fafaf8;
-  --sidebar-accent: #eae9e6;
-  --sidebar-accent-foreground: #2d2d2d;
-  --sidebar-border: #e5e4e1;
-  --sidebar-ring: #b0afa8;
+
+  /* Sidebar — subtle background shift */
+  --sidebar: #fafafa;
+  --sidebar-foreground: #1a1a1a;
+  --sidebar-primary: #2563eb;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f5f5f5;
+  --sidebar-accent-foreground: #1a1a1a;
+  --sidebar-border: transparent;
+  --sidebar-ring: #2563eb;
 }
 
 @layer base {
@@ -92,27 +124,224 @@
   }
   html {
     @apply font-sans;
+    /* Prevent pull-to-refresh and scroll chaining on mobile */
+    overscroll-behavior: none;
+  }
+  /* Fallback for browsers without dvh support */
+  @supports not (height: 100dvh) {
+    html, body {
+      height: 100vh;
+    }
   }
 }
 
-/* 自定义滚动条 */
+/* Custom scrollbar — minimal */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 4px;
+  height: 4px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #d5d4d0;
-  border-radius: 3px;
+  background: #d4d4d4;
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #b0afa8;
+  background: #a3a3a3;
 }
 
-/* 全局过渡 */
-* {
-  transition-property: background-color, border-color, color, box-shadow;
+/* Focus ring — consistent, accessible */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Safe area for notched devices */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Smooth transitions — interactive properties only */
+button,
+a,
+input,
+textarea,
+select {
+  transition-property: background-color, border-color, color, box-shadow, opacity, transform;
   transition-duration: 150ms;
-  transition-timing-function: ease-out;
+  transition-timing-function: cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+/* Prevent 300ms tap delay on mobile */
+button,
+a,
+[role="button"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Selection */
+::selection {
+  background: #2563eb20;
+  color: inherit;
+}
+
+/* ─── Responsive typography ─── */
+@media (max-width: 640px) {
+  .prose-chat {
+    font-size: 15px;
+  }
+  .prose-chat h1 { font-size: 20px; }
+  .prose-chat h2 { font-size: 17px; }
+  .prose-chat h3 { font-size: 15px; }
+  .prose-chat table { font-size: 13px; }
+  .prose-chat th { padding: 10px 12px; font-size: 12px; }
+  .prose-chat td { padding: 10px 12px; }
+}
+
+/* ─── Chat prose — structured markdown rendering ─── */
+.prose-chat {
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--foreground);
+}
+.prose-chat h1 {
+  font-size: 22px;
+  font-weight: 700;
+  margin-top: 28px;
+  margin-bottom: 12px;
+  color: var(--foreground);
+  letter-spacing: -0.01em;
+}
+.prose-chat h2 {
+  font-size: 19px;
+  font-weight: 700;
+  margin-top: 24px;
+  margin-bottom: 10px;
+  color: var(--foreground);
+  letter-spacing: -0.01em;
+}
+.prose-chat h3 {
+  font-size: 17px;
+  font-weight: 600;
+  margin-top: 20px;
+  margin-bottom: 8px;
+  color: var(--foreground);
+}
+.prose-chat p {
+  margin: 12px 0;
+  line-height: 1.75;
+}
+.prose-chat > p + p {
+  margin-top: 14px;
+}
+.prose-chat ul,
+.prose-chat ol {
+  margin: 14px 0;
+  padding-left: 24px;
+}
+.prose-chat li {
+  margin: 6px 0;
+  line-height: 1.75;
+}
+.prose-chat li::marker {
+  color: var(--muted-foreground);
+}
+.prose-chat blockquote {
+  margin: 16px 0;
+  padding: 12px 18px;
+  border-left: 3px solid var(--primary);
+  background: var(--muted);
+  border-radius: 0 8px 8px 0;
+  color: var(--muted-foreground);
+}
+.prose-chat strong {
+  font-weight: 600;
+  color: var(--foreground);
+}
+.prose-chat a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.prose-chat a:hover {
+  opacity: 0.8;
+}
+.prose-chat hr {
+  margin: 24px 0;
+  border-color: var(--border);
+}
+.prose-chat img {
+  max-width: 100%;
+  border-radius: 12px;
+  margin: 12px 0;
+}
+.prose-chat table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 14px 0;
+  font-size: 14px;
+}
+.prose-chat th {
+  background: var(--muted);
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--border);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+}
+.prose-chat td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.prose-chat tr:hover td {
+  background: var(--muted) / 30%;
+}
+
+/* ─── Animations ─── */
+
+@keyframes message-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.message-enter {
+  animation: message-enter 0.3s ease forwards;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.thinking-shimmer {
+  background: linear-gradient(90deg, var(--muted) 25%, color-mix(in srgb, var(--muted-foreground) 5%, var(--muted)) 50%, var(--muted) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* Subtle depth for elevated elements */
+.elevated {
+  background: var(--card);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
