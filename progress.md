@@ -22,3 +22,8 @@
 - Created visual companion page at `http://localhost:59768`.
 - User approved the recommended "Production Backbone First" direction with "go".
 - Wrote design spec at `docs/superpowers/specs/2026-05-17-production-readiness-redesign-design.md`.
+- User confirmed implementation again with "go" after the interruption.
+- Restored `task_plan.md`, `findings.md`, and `progress.md` before continuing.
+- Read current Next 16 App Router docs for pages plus server/client component boundaries before planning frontend changes.
+- Wrote implementation plan at `docs/superpowers/plans/2026-05-17-production-readiness-redesign.md`.
+- Added `.worktrees/` to `.gitignore` so isolated implementation worktrees do not pollute git status.
