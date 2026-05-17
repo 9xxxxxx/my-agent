@@ -33,3 +33,8 @@
 - Started Task 1 by adding Vitest/pytest metadata and failing router/message tests.
 - Frontend RED check failed as expected because `src/lib/messages.ts` does not exist yet.
 - Backend RED check first failed because pytest could not import `core`; added `tests/conftest.py` to put the backend root on `sys.path`.
+- Implemented `frontend/src/lib/messages.ts`; focused Vitest message tests pass.
+- Refactored `frontend/src/stores/chat.ts` to store typed response blocks while retaining legacy fields for existing UI compatibility.
+- Updated ChatPanel, MessageBubble, and export/search helpers to use `messageToPlainText`.
+- Focused lint for chat/message files passes; full frontend lint still has known page/settings/connection issues scheduled for later tasks.
+- `pnpm build` passes after the message model refactor.

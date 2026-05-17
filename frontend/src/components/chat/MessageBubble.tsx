@@ -6,6 +6,7 @@ import EChart from "@/components/chart/EChart";
 import type { EChartsOption } from "echarts";
 import type { Message, ToolCall } from "@/stores/chat";
 import { toast } from "sonner";
+import { messageToPlainText } from "@/lib/messages";
 
 interface Props {
   message: Message;
@@ -356,12 +357,13 @@ function MarkdownContent({ content }: { content: string }) {
 export default function MessageBubble({ message, onRetry, onEdit }: Props) {
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
+  const plainText = messageToPlainText(message);
 
   if (isSystem) {
     return (
       <div className="flex justify-center py-2">
         <span className="text-[13px] text-[--muted-foreground] bg-[--muted] px-3 py-1 rounded-full">
-          {message.content}
+          {plainText}
         </span>
       </div>
     );
@@ -369,7 +371,7 @@ export default function MessageBubble({ message, onRetry, onEdit }: Props) {
 
   const hasReasoning = !isUser && !!message.reasoning;
   const hasToolCalls = !isUser && message.toolCalls && message.toolCalls.length > 0;
-  const hasContent = !!message.content;
+  const hasContent = !!plainText;
   const hasChart = !!message.chart;
 
   return (
@@ -387,7 +389,7 @@ export default function MessageBubble({ message, onRetry, onEdit }: Props) {
         {/* User message — right-aligned bubble */}
         {isUser ? (
           <div style={{ background: "#f0f0f0", color: "var(--foreground)", padding: "12px 8px 12px 16px", borderRadius: "16px 16px 16px 4px" }}>
-            <p className="whitespace-pre-wrap leading-[1.8]">{message.content}</p>
+            <p className="whitespace-pre-wrap leading-[1.8]">{plainText}</p>
           </div>
         ) : (
           /* AI message — flat, no box, like ChatGPT */
@@ -400,7 +402,7 @@ export default function MessageBubble({ message, onRetry, onEdit }: Props) {
               {hasToolCalls && <ToolCallsSection tools={message.toolCalls!} />}
 
               {/* Layer 3: Final reply */}
-              {hasContent && <MarkdownContent content={message.content} />}
+              {hasContent && <MarkdownContent content={plainText} />}
 
               {/* Chart */}
               {hasChart && (
@@ -414,7 +416,7 @@ export default function MessageBubble({ message, onRetry, onEdit }: Props) {
 
         {/* Action buttons — agent: always visible, user: hover only */}
         <div className={`flex items-center gap-1 mt-1.5 ${isUser ? "justify-end opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200" : "justify-start"}`}>
-          {hasContent && <CopyButton text={message.content} label="复制" />}
+          {hasContent && <CopyButton text={plainText} label="复制" />}
           {!isUser && onRetry && (
             <button
               onClick={onRetry}
@@ -430,7 +432,7 @@ export default function MessageBubble({ message, onRetry, onEdit }: Props) {
           )}
           {isUser && onEdit && (
             <button
-              onClick={() => onEdit(message.content)}
+              onClick={() => onEdit(plainText)}
               aria-label="编辑并重新发送"
               className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] text-[--muted-foreground] hover:bg-[--accent] hover:text-[--foreground] transition-colors cursor-pointer"
             >

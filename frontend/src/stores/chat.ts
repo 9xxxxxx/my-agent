@@ -1,13 +1,18 @@
 import { create } from "zustand";
 import {
-  fetchConversations,
   fetchConversation,
+  fetchConversations,
   saveConversation,
   updateConversation,
   deleteConversationApi,
 } from "@/lib/api";
-
-// ─── Types ───
+import {
+  applyChatEvent,
+  migrateMessage,
+  messageToPlainText,
+  type BlockMessage,
+  type LegacyMessage,
+} from "@/lib/messages";
 
 export interface ToolCall {
   name: string;
@@ -15,20 +20,28 @@ export interface ToolCall {
   output?: string;
 }
 
-export interface Message {
-  id: string;
-  role: "user" | "assistant" | "system";
-  content: string;
+export type Message = BlockMessage & {
+  content?: string;
   reasoning?: string;
   chart?: Record<string, unknown>;
   toolCalls?: ToolCall[];
-  timestamp: number;
-}
+  timestamp?: number;
+};
+
+export type StoredMessage = Message | LegacyMessage;
 
 export interface Conversation {
   id: string;
   title: string;
   messages: Message[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface StoredConversation {
+  id: string;
+  title: string;
+  messages: StoredMessage[];
   createdAt: number;
   updatedAt: number;
 }
@@ -41,8 +54,6 @@ export interface LLMConfig {
   temperature: number;
 }
 
-// ─── Store ───
-
 interface ChatState {
   conversations: Conversation[];
   activeId: string | null;
@@ -50,18 +61,15 @@ interface ChatState {
   currentTool: string | null;
   currentAgent: string | null;
 
-  // Conversation CRUD
   createConversation: () => string;
   switchConversation: (id: string) => void;
   deleteConversation: (id: string) => void;
   renameConversation: (id: string, title: string) => void;
 
-  // Active conversation selectors
   getActive: () => Conversation | null;
   getMessages: () => Message[];
 
-  // Message operations (on active conversation)
-  addMessage: (msg: Message) => void;
+  addMessage: (msg: StoredMessage) => void;
   appendToLastAssistant: (delta: string) => void;
   appendToLastReasoning: (delta: string) => void;
   addToolCall: (tool: ToolCall) => void;
@@ -71,22 +79,42 @@ interface ChatState {
   truncateFromIndex: (index: number) => void;
   flushConversation: () => void;
 
-  // Streaming state
   setLoading: (loading: boolean) => void;
   setCurrentTool: (tool: string | null) => void;
   setCurrentAgent: (agent: string | null) => void;
 }
 
-// ─── Storage ───
-
 const STORAGE_KEY = "chat-conversations";
 const ACTIVE_KEY = "chat-active-id";
+
+function withLegacyFields(message: BlockMessage, existing?: Partial<StoredMessage>): Message {
+  return {
+    ...message,
+    content: messageToPlainText(message),
+    reasoning: existing && "reasoning" in existing ? existing.reasoning : undefined,
+    chart: existing && "chart" in existing ? existing.chart : undefined,
+    toolCalls: existing && "toolCalls" in existing ? existing.toolCalls : undefined,
+    timestamp: message.createdAt,
+  };
+}
+
+function normalizeMessage(message: StoredMessage): Message {
+  return withLegacyFields(migrateMessage(message), message);
+}
+
+function normalizeConversation(conv: StoredConversation): Conversation {
+  return {
+    ...conv,
+    messages: conv.messages.map(normalizeMessage),
+  };
+}
 
 function loadConversations(): { conversations: Conversation[]; activeId: string | null } {
   if (typeof window === "undefined") return { conversations: [], activeId: null };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    const conversations: Conversation[] = raw ? JSON.parse(raw) : [];
+    const parsed = raw ? JSON.parse(raw) as StoredConversation[] : [];
+    const conversations = parsed.map(normalizeConversation);
     const activeId = localStorage.getItem(ACTIVE_KEY);
     return { conversations, activeId };
   } catch {
@@ -100,25 +128,29 @@ function saveConversations(conversations: Conversation[]) {
   }
 }
 
-// ─── Backend sync ───
+function saveActiveId(id: string | null) {
+  if (typeof window !== "undefined") {
+    if (id) localStorage.setItem(ACTIVE_KEY, id);
+    else localStorage.removeItem(ACTIVE_KEY);
+  }
+}
 
 async function syncFromBackend() {
   try {
     const summaries = await fetchConversations();
     if (summaries.length === 0) return;
 
-    // Load full conversations (with messages) from backend
     const convs: Conversation[] = await Promise.all(
-      summaries.map(async (s) => {
+      summaries.map(async (summary) => {
         try {
-          const detail = await fetchConversation(s.id);
-          return {
+          const detail = await fetchConversation(summary.id);
+          return normalizeConversation({
             id: detail.id,
             title: detail.title,
-            messages: detail.messages as Message[],
+            messages: detail.messages as StoredMessage[],
             createdAt: detail.created_at,
             updatedAt: detail.updated_at,
-          };
+          });
         } catch {
           return null;
         }
@@ -129,20 +161,13 @@ async function syncFromBackend() {
       useChatStore.setState({ conversations: convs });
       saveConversations(convs);
       const activeId = useChatStore.getState().activeId;
-      if (!activeId || !convs.find((c) => c.id === activeId)) {
+      if (!activeId || !convs.find((conv) => conv.id === activeId)) {
         useChatStore.setState({ activeId: convs[0].id });
         saveActiveId(convs[0].id);
       }
     }
   } catch {
-    // Backend unavailable, use localStorage
-  }
-}
-
-function saveActiveId(id: string | null) {
-  if (typeof window !== "undefined") {
-    if (id) localStorage.setItem(ACTIVE_KEY, id);
-    else localStorage.removeItem(ACTIVE_KEY);
+    // Backend unavailable, use localStorage.
   }
 }
 
@@ -157,24 +182,30 @@ function createNewConversation(): Conversation {
 }
 
 function deriveTitle(messages: Message[]): string {
-  const firstUser = messages.find((m) => m.role === "user");
+  const firstUser = messages.find((message) => message.role === "user");
   if (!firstUser) return "新对话";
-  const text = firstUser.content.trim();
-  return text.length > 30 ? text.slice(0, 30) + "..." : text || "新对话";
+  const text = messageToPlainText(firstUser).trim();
+  return text.length > 30 ? `${text.slice(0, 30)}...` : text || "新对话";
 }
 
-// ─── Init ───
+function updateActiveConversation(
+  state: ChatState,
+  updater: (conversation: Conversation) => Conversation,
+): Conversation[] {
+  return state.conversations.map((conversation) => {
+    if (conversation.id !== state.activeId) return conversation;
+    return updater(conversation);
+  });
+}
+
+function updateLastAssistantMessage(message: Message, updater: (message: Message) => Message): Message {
+  if (message.role !== "assistant") return message;
+  return updater(message);
+}
 
 const init = loadConversations();
-const initialConv = init.conversations.length > 0
-  ? init.conversations[0]
-  : createNewConversation();
-
-const initialConversations = init.conversations.length > 0
-  ? init.conversations
-  : [initialConv];
-
-// ─── Export store ───
+const initialConv = init.conversations.length > 0 ? init.conversations[0] : createNewConversation();
+const initialConversations = init.conversations.length > 0 ? init.conversations : [initialConv];
 
 export const useChatStore = create<ChatState>((set, get) => ({
   conversations: initialConversations,
@@ -183,17 +214,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
   currentTool: null,
   currentAgent: null,
 
-  // ── Conversation CRUD ──
-
   createConversation: () => {
     const conv = createNewConversation();
-    set((s) => {
-      const conversations = [conv, ...s.conversations];
+    set((state) => {
+      const conversations = [conv, ...state.conversations];
       saveConversations(conversations);
       saveActiveId(conv.id);
       return { conversations, activeId: conv.id };
     });
-    saveConversation({
+    void saveConversation({
       id: conv.id,
       title: conv.title,
       messages: conv.messages,
@@ -209,15 +238,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   deleteConversation: (id) => {
-    set((s) => {
-      const conversations = s.conversations.filter((c) => c.id !== id);
-      let activeId = s.activeId;
+    set((state) => {
+      const conversations = state.conversations.filter((conversation) => conversation.id !== id);
+      let activeId = state.activeId;
 
       if (conversations.length === 0) {
         const fallback = createNewConversation();
         conversations.push(fallback);
         activeId = fallback.id;
-        saveConversation({
+        void saveConversation({
           id: fallback.id,
           title: fallback.title,
           messages: fallback.messages,
@@ -232,164 +261,152 @@ export const useChatStore = create<ChatState>((set, get) => ({
       saveActiveId(activeId);
       return { conversations, activeId };
     });
-    deleteConversationApi(id);
+    void deleteConversationApi(id);
   },
 
   renameConversation: (id, title) => {
-    set((s) => {
-      const conversations = s.conversations.map((c) =>
-        c.id === id ? { ...c, title, updatedAt: Date.now() } : c,
+    set((state) => {
+      const updatedAt = Date.now();
+      const conversations = state.conversations.map((conversation) =>
+        conversation.id === id ? { ...conversation, title, updatedAt } : conversation,
       );
       saveConversations(conversations);
       return { conversations };
     });
-    updateConversation(id, { title, updated_at: Date.now() });
+    void updateConversation(id, { title, updated_at: Date.now() });
   },
-
-  // ── Selectors ──
 
   getActive: () => {
     const { conversations, activeId } = get();
-    return conversations.find((c) => c.id === activeId) || conversations[0] || null;
+    return conversations.find((conversation) => conversation.id === activeId) || conversations[0] || null;
   },
 
-  getMessages: () => {
-    const active = get().getActive();
-    return active?.messages || [];
-  },
-
-  // ── Message operations (on active conversation) ──
+  getMessages: () => get().getActive()?.messages || [],
 
   addMessage: (msg) =>
-    set((s) => {
-      const conversations = s.conversations.map((c) => {
-        if (c.id !== s.activeId) return c;
-        const messages = [...c.messages, msg];
-        const title = c.title === "新对话" ? deriveTitle(messages) : c.title;
+    set((state) => {
+      const message = normalizeMessage(msg);
+      const conversations = updateActiveConversation(state, (conversation) => {
+        const messages = [...conversation.messages, message];
+        const title = conversation.title === "新对话" ? deriveTitle(messages) : conversation.title;
         const updatedAt = Date.now();
-        // Sync to backend
-        updateConversation(c.id, { title, messages, updated_at: updatedAt });
-        return { ...c, messages, title, updatedAt };
+        void updateConversation(conversation.id, { title, messages, updated_at: updatedAt });
+        return { ...conversation, messages, title, updatedAt };
       });
       saveConversations(conversations);
       return { conversations };
     }),
 
   appendToLastAssistant: (delta) =>
-    set((s) => {
-      const conversations = s.conversations.map((c) => {
-        if (c.id !== s.activeId) return c;
-        const msgs = [...c.messages];
-        const last = msgs[msgs.length - 1];
-        if (last && last.role === "assistant") {
-          msgs[msgs.length - 1] = { ...last, content: last.content + delta };
+    set((state) => {
+      const conversations = updateActiveConversation(state, (conversation) => {
+        const messages = [...conversation.messages];
+        const last = messages[messages.length - 1];
+        if (last) {
+          const updated = withLegacyFields(applyChatEvent(last, { type: "text_delta", content: delta }), last);
+          messages[messages.length - 1] = updateLastAssistantMessage(last, () => updated);
         }
-        return { ...c, messages: msgs, updatedAt: Date.now() };
+        return { ...conversation, messages, updatedAt: Date.now() };
       });
       saveConversations(conversations);
       return { conversations };
     }),
 
   appendToLastReasoning: (delta) =>
-    set((s) => {
-      const conversations = s.conversations.map((c) => {
-        if (c.id !== s.activeId) return c;
-        const msgs = [...c.messages];
-        const last = msgs[msgs.length - 1];
-        if (last && last.role === "assistant") {
-          msgs[msgs.length - 1] = { ...last, reasoning: (last.reasoning || "") + delta };
+    set((state) => {
+      const conversations = updateActiveConversation(state, (conversation) => {
+        const messages = [...conversation.messages];
+        const last = messages[messages.length - 1];
+        if (last?.role === "assistant") {
+          messages[messages.length - 1] = { ...last, reasoning: `${last.reasoning || ""}${delta}` };
         }
-        return { ...c, messages: msgs };
+        return { ...conversation, messages, updatedAt: Date.now() };
       });
       saveConversations(conversations);
       return { conversations };
     }),
 
   addToolCall: (tool) =>
-    set((s) => {
-      const conversations = s.conversations.map((c) => {
-        if (c.id !== s.activeId) return c;
-        const msgs = [...c.messages];
-        const last = msgs[msgs.length - 1];
-        if (last && last.role === "assistant") {
+    set((state) => {
+      const conversations = updateActiveConversation(state, (conversation) => {
+        const messages = [...conversation.messages];
+        const last = messages[messages.length - 1];
+        if (last?.role === "assistant") {
           const toolCalls = [...(last.toolCalls || []), tool];
-          msgs[msgs.length - 1] = { ...last, toolCalls };
+          const updated = withLegacyFields(applyChatEvent(last, { type: "tool_call", tool: tool.name, arguments: tool.arguments }), { ...last, toolCalls });
+          messages[messages.length - 1] = { ...updated, toolCalls };
         }
-        return { ...c, messages: msgs };
+        return { ...conversation, messages, updatedAt: Date.now() };
       });
+      saveConversations(conversations);
       return { conversations };
     }),
 
-  setLastToolOutput: (callId, output) =>
-    set((s) => {
-      const conversations = s.conversations.map((c) => {
-        if (c.id !== s.activeId) return c;
-        const msgs = [...c.messages];
-        const last = msgs[msgs.length - 1];
-        if (last && last.role === "assistant" && last.toolCalls) {
-          const toolCalls = [...last.toolCalls];
-          // Set output on the last tool call without output yet
-          const idx = toolCalls.findLastIndex((t) => !t.output);
-          if (idx >= 0) {
-            toolCalls[idx] = { ...toolCalls[idx], output };
-          }
-          msgs[msgs.length - 1] = { ...last, toolCalls };
+  setLastToolOutput: (_callId, output) =>
+    set((state) => {
+      const conversations = updateActiveConversation(state, (conversation) => {
+        const messages = [...conversation.messages];
+        const last = messages[messages.length - 1];
+        if (last?.role === "assistant") {
+          const toolCalls = [...(last.toolCalls || [])];
+          const index = toolCalls.findLastIndex((tool) => !tool.output);
+          if (index >= 0) toolCalls[index] = { ...toolCalls[index], output };
+          const updated = withLegacyFields(applyChatEvent(last, { type: "tool_result", content: output }), { ...last, toolCalls });
+          messages[messages.length - 1] = { ...updated, toolCalls };
         }
-        return { ...c, messages: msgs };
+        return { ...conversation, messages, updatedAt: Date.now() };
       });
+      saveConversations(conversations);
       return { conversations };
     }),
 
   setLastChart: (chart) =>
-    set((s) => {
-      const conversations = s.conversations.map((c) => {
-        if (c.id !== s.activeId) return c;
-        const msgs = [...c.messages];
-        const last = msgs[msgs.length - 1];
-        if (last && last.role === "assistant") {
-          msgs[msgs.length - 1] = { ...last, chart };
+    set((state) => {
+      const conversations = updateActiveConversation(state, (conversation) => {
+        const messages = [...conversation.messages];
+        const last = messages[messages.length - 1];
+        if (last?.role === "assistant") {
+          messages[messages.length - 1] = withLegacyFields(
+            { ...last, blocks: [...last.blocks, { id: `${last.id}-chart-${last.blocks.length}`, type: "chart", option: chart }], updatedAt: Date.now() },
+            { ...last, chart },
+          );
         }
-        return { ...c, messages: msgs };
+        return { ...conversation, messages, updatedAt: Date.now() };
       });
       saveConversations(conversations);
       return { conversations };
     }),
 
   removeLastAssistant: () =>
-    set((s) => {
-      const conversations = s.conversations.map((c) => {
-        if (c.id !== s.activeId) return c;
-        const msgs = [...c.messages];
-        const last = msgs[msgs.length - 1];
-        if (last && last.role === "assistant") {
-          msgs.pop();
-        }
+    set((state) => {
+      const conversations = updateActiveConversation(state, (conversation) => {
+        const messages = [...conversation.messages];
+        const last = messages[messages.length - 1];
+        if (last?.role === "assistant") messages.pop();
         const updatedAt = Date.now();
-        updateConversation(c.id, { messages: msgs, updated_at: updatedAt });
-        return { ...c, messages: msgs, updatedAt };
+        void updateConversation(conversation.id, { messages, updated_at: updatedAt });
+        return { ...conversation, messages, updatedAt };
       });
       saveConversations(conversations);
       return { conversations };
     }),
 
   truncateFromIndex: (index) =>
-    set((s) => {
-      const conversations = s.conversations.map((c) => {
-        if (c.id !== s.activeId) return c;
-        const msgs = c.messages.slice(0, index);
+    set((state) => {
+      const conversations = updateActiveConversation(state, (conversation) => {
+        const messages = conversation.messages.slice(0, index);
         const updatedAt = Date.now();
-        updateConversation(c.id, { messages: msgs, updated_at: updatedAt });
-        return { ...c, messages: msgs, updatedAt };
+        void updateConversation(conversation.id, { messages, updated_at: updatedAt });
+        return { ...conversation, messages, updatedAt };
       });
       saveConversations(conversations);
       return { conversations };
     }),
 
   flushConversation: () => {
-    const { conversations, activeId } = get();
-    const conv = conversations.find((c) => c.id === activeId);
+    const conv = get().getActive();
     if (conv) {
-      updateConversation(conv.id, {
+      void updateConversation(conv.id, {
         title: conv.title,
         messages: conv.messages,
         updated_at: conv.updatedAt,
@@ -397,14 +414,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  // ── Streaming state ──
-
   setLoading: (loading) => set({ isLoading: loading }),
   setCurrentTool: (tool) => set({ currentTool: tool }),
   setCurrentAgent: (agent) => set({ currentAgent: agent }),
 }));
 
-// Sync from backend on client init
 if (typeof window !== "undefined") {
-  syncFromBackend();
+  void syncFromBackend();
 }

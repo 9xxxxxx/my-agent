@@ -11,6 +11,7 @@ import {
 import { useChatStore, type Conversation } from "@/stores/chat";
 import { useConnectionStore } from "@/stores/connection";
 import { toast } from "sonner";
+import { messageToPlainText } from "@/lib/messages";
 
 // ─── Hooks ───
 
@@ -61,11 +62,11 @@ function exportAsMarkdown(conv: Conversation): string {
   const lines: string[] = [`# ${conv.title}`, ""];
   for (const msg of conv.messages) {
     if (msg.role === "system") {
-      lines.push(`> ${msg.content}`, "");
+      lines.push(`> ${messageToPlainText(msg)}`, "");
     } else if (msg.role === "user") {
-      lines.push(`**You:** ${msg.content}`, "");
+      lines.push(`**You:** ${messageToPlainText(msg)}`, "");
     } else {
-      lines.push(`**AI:** ${msg.content}`, "");
+      lines.push(`**AI:** ${messageToPlainText(msg)}`, "");
     }
   }
   return lines.join("\n");
@@ -415,7 +416,7 @@ function DesktopPage() {
     const q = searchQuery.toLowerCase();
     return conversations.filter((c) => {
       if (c.title.toLowerCase().includes(q)) return true;
-      return c.messages.some((m) => m.content.toLowerCase().includes(q));
+      return c.messages.some((m) => messageToPlainText(m).toLowerCase().includes(q));
     });
   }, [conversations, searchQuery]);
 
