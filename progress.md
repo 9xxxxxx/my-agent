@@ -28,3 +28,8 @@
 - Wrote implementation plan at `docs/superpowers/plans/2026-05-17-production-readiness-redesign.md`.
 - Added `.worktrees/` to `.gitignore` so isolated implementation worktrees do not pollute git status.
 - Worktree ignore verification failed for the directory path itself; added `.worktrees` alongside `.worktrees/`.
+- Created implementation worktree at `.worktrees/production-readiness` on branch `codex/production-readiness`.
+- Installed frontend and backend dependencies inside the worktree.
+- Started Task 1 by adding Vitest/pytest metadata and failing router/message tests.
+- Frontend RED check failed as expected because `src/lib/messages.ts` does not exist yet.
+- Backend RED check first failed because pytest could not import `core`; added `tests/conftest.py` to put the backend root on `sys.path`.
