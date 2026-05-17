@@ -264,3 +264,12 @@ def create_agent(
         orchestrator.instructions = instructions
 
     return orchestrator
+
+
+def create_agent_for_name(name: str, model=None) -> Agent:
+    """Create the specialist agent selected by the deterministic router."""
+    if name == DATA_ANALYST_NAME:
+        return create_data_analyst(model)
+    if name == REPORT_WRITER_NAME:
+        return create_report_writer(model)
+    return create_general_assistant(model)

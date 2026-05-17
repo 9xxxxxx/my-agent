@@ -45,3 +45,6 @@
 - Focused lint for the new shell/message/InputBar files passes; `pnpm build` passes.
 - Cleaned remaining frontend lint errors in settings and connection profile migration.
 - Full `pnpm lint`, focused Vitest message tests, and `pnpm build` pass.
+- Added deterministic backend router and safe SSE error payload mapping.
+- Chat endpoint now selects the specialist agent directly, emits `agent_status`, and resets request-scoped DB context after streaming.
+- Backend router/error tests pass; focused backend compile check passes.

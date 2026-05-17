@@ -4,9 +4,11 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from agents import Runner
-from core.agent import create_agent, AGENT_DISPLAY_NAMES, ORCHESTRATOR_NAME
+from core.agent import create_agent_for_name, AGENT_DISPLAY_NAMES
 from core.llm import create_llm_model
-from core.database import set_current_db_url
+from core.database import reset_current_db_url, set_current_db_url
+from core.errors import safe_error_payload
+from core.router import classify_intent
 
 router = APIRouter()
 
@@ -35,16 +37,15 @@ class ChatRequest(BaseModel):
 @router.post("/api/chat")
 async def chat(req: ChatRequest, request: Request):
     """SSE 流式对话：前端发送消息，后端流式返回 Agent 事件"""
-    # Set per-request database URL for tools to use
-    if req.database_url:
-        set_current_db_url(req.database_url)
-
     llm_model = create_llm_model(
         api_key=req.api_key,
         base_url=req.base_url,
         model_name=req.model,
     )
-    agent = create_agent(model=llm_model, instructions=req.instructions)
+    route = classify_intent(req.message)
+    agent = create_agent_for_name(route.agent_name, model=llm_model)
+    if req.instructions:
+        agent.instructions = req.instructions
 
     def build_input_items(history: list[ChatMessage], new_message: str) -> list[dict]:
         """将前端消息历史转换为 SDK Responses API input item 格式。
@@ -86,7 +87,10 @@ async def chat(req: ChatRequest, request: Request):
     is_dev = req.mode == "dev"
 
     async def event_stream():
+        db_token = set_current_db_url(req.database_url) if req.database_url else None
         try:
+            yield sse("agent_status", agent=route.agent_name, display_name=route.display_name, status="running")
+
             if req.history:
                 input_items = build_input_items(req.history, req.message)
                 result = Runner.run_streamed(agent, input_items)
@@ -95,7 +99,7 @@ async def chat(req: ChatRequest, request: Request):
 
             # ── Prod 模式文本过滤 ──
             # 策略：只输出非 Orchestrator Agent 的文本，Orchestrator 的文本全部丢弃。
-            current_agent_name = ORCHESTRATOR_NAME
+            current_agent_name = route.agent_name
 
             async for event in result.stream_events():
                 # 原始响应事件
@@ -106,7 +110,7 @@ async def chat(req: ChatRequest, request: Request):
                         delta = event.data.delta
                         if is_dev:
                             yield sse("text_delta", content=delta)
-                        elif current_agent_name != ORCHESTRATOR_NAME:
+                        else:
                             # 只有 specialist agent 的文本才输出
                             yield sse("text_delta", content=delta)
 
@@ -152,7 +156,10 @@ async def chat(req: ChatRequest, request: Request):
         except Exception as e:
             import logging, traceback
             logging.getLogger("chat").error("CHAT ERROR: %s\n%s", e, traceback.format_exc())
-            yield sse("error", content=str(e))
+            yield f"data: {json.dumps(safe_error_payload(e), ensure_ascii=False)}\n\n"
+        finally:
+            if db_token is not None:
+                reset_current_db_url(db_token)
 
     return StreamingResponse(
         event_stream(),
