@@ -70,3 +70,10 @@
 - Storage APIs expose full LLM and DB profile configs, including API keys and DB passwords.
 - `send_email_notification` calls `asyncio.get_event_loop().run_until_complete(...)` inside a synchronous tool. Under an already-running event loop this can fail; it should be async-aware or use a sync SMTP implementation.
 - Frontend API helper silently swallows many persistence failures (`catch(() => {})`), so production users can lose state without clear recovery.
+
+## Implementation Findings
+- Structured message blocks are now the canonical frontend response representation; legacy content/tool/chart fields are retained during migration for compatibility.
+- The responsive app shell is now a single tree using sidebar sheet behavior on narrow viewports and an inspector column on wide viewports.
+- Full frontend lint now passes after removing hydration-only `mounted` effects and broad `any` usage in settings/profile migration.
+- Backend deterministic routing now bypasses prompt-only orchestration for initial agent selection and emits `agent_status` SSE events.
+- Upload/export filename containment and profile redaction are covered by backend tests.

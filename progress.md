@@ -51,3 +51,7 @@
 - Added upload/export path containment and profile secret redaction.
 - CORS origins now come from `CORS_ORIGINS`.
 - Backend path/redaction tests pass; focused backend compile check passes.
+- Full verification passed: `pnpm lint`, `pnpm test`, `pnpm build`, `uv run pytest tests -q`, and `uv run python -m compileall app.py api core tools`.
+- Browser QA used `pnpm start -- --port 3004` because `next dev` returned a Turbopack internal Google font module 500 in this worktree.
+- Browser QA confirmed the production page returns 200, the mobile-width shell has no horizontal overflow, and the sidebar sheet opens correctly.
+- Updated README with production readiness checks and deployment notes.

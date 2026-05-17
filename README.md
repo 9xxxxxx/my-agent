@@ -6,7 +6,7 @@ AI 驱动的数据分析助手。用自然语言提问，自动完成数据库�
 
 | 层 | 技术 |
 |---|---|
-| 前端 | React + Next.js 15 + Shadcn/ui + ECharts |
+| 前端 | React 19 + Next.js 16 + Shadcn/ui + ECharts |
 | 后端 | Python 3.13 + FastAPI + OpenAI Agents SDK |
 | 数据库 | SQLAlchemy (PostgreSQL / MySQL / SQLite / DuckDB) |
 | 文件 | Pandas + DuckDB 内存引擎 |
@@ -75,5 +75,27 @@ frontend/
 | `OPENAI_API_BASE` | API Base URL |
 | `OPENAI_MODEL` | 默认模型 |
 | `AGENT_DATABASE_URL` | 数据库连接串 |
+| `CORS_ORIGINS` | 允许访问后端的前端源，逗号分隔，默认 `http://localhost:3000` |
+| `APP_ENV` / `APP_TOKEN` | 部署环境和应用令牌预留配置 |
 | `FEISHU_WEBHOOK_URL` | 飞书群 Webhook |
 | `SMTP_SERVER` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` | 邮件配置 |
+
+## Production Readiness Checks
+
+```bash
+cd frontend
+pnpm lint
+pnpm test
+pnpm build
+
+cd ../backend
+uv run pytest tests -q
+uv run python -m compileall app.py api core tools
+```
+
+部署前至少确认：
+
+- 配置 `CORS_ORIGINS` 为真实前端域名。
+- 不要公开返回 LLM API Key 和数据库密码；profile 查询接口默认会脱敏。
+- 上传和报告下载只允许访问服务端指定目录内的文件。
+- 对外暴露 API 前设置正式认证边界；当前 `APP_TOKEN` 只是部署配置预留项。
