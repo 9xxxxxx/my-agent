@@ -106,7 +106,7 @@ const defaultLLM: LLMConfig = {
   temperature: 0,
 };
 
-const defaultDB: DBConfig = {
+const defaultDB: ServerDBConfig = {
   type: "postgresql",
   host: "localhost",
   port: "5432",
@@ -155,6 +155,37 @@ function saveJSON(key: string, value: unknown) {
   if (typeof window !== "undefined") localStorage.setItem(key, JSON.stringify(value));
 }
 
+interface LegacyConnectionProfile {
+  id?: string;
+  name?: string;
+  llm?: Partial<LLMConfig>;
+  db?: Partial<DBConfig>;
+  createdAt?: number;
+}
+
+function normalizeLegacyDB(config?: Partial<DBConfig>): DBConfig {
+  if (config?.type === "sqlite" || config?.type === "duckdb") {
+    return {
+      type: config.type,
+      filePath: "filePath" in config && typeof config.filePath === "string" ? config.filePath : "",
+    };
+  }
+
+  if (config?.type === "mysql" || config?.type === "postgresql") {
+    const server = config as Partial<ServerDBConfig>;
+    return {
+      type: config.type,
+      host: typeof server.host === "string" ? server.host : defaultDB.host,
+      port: typeof server.port === "string" ? server.port : defaultDB.port,
+      user: typeof server.user === "string" ? server.user : defaultDB.user,
+      password: typeof server.password === "string" ? server.password : defaultDB.password,
+      database: typeof server.database === "string" ? server.database : defaultDB.database,
+    };
+  }
+
+  return { ...defaultDB };
+}
+
 // ─── Migration from old combined profiles ───
 function migrate(): { llmProfiles: LLMProfile[]; dbProfiles: DBProfile[]; llmActive: string | null; dbActive: string | null } {
   const savedLLM = loadJSON<LLMProfile[]>(LLM_KEY, []);
@@ -170,18 +201,18 @@ function migrate(): { llmProfiles: LLMProfile[]; dbProfiles: DBProfile[]; llmAct
   }
 
   // Migrate from old combined "connection-profiles"
-  const old = loadJSON<any[]>("connection-profiles", []);
+  const old = loadJSON<LegacyConnectionProfile[]>("connection-profiles", []);
   if (old.length > 0) {
     const llmProfiles: LLMProfile[] = old.map((p) => ({
-      id: p.id,
-      name: p.name,
-      config: p.llm || { ...defaultLLM },
+      id: p.id || crypto.randomUUID(),
+      name: p.name || "默认 LLM",
+      config: { ...defaultLLM, ...(p.llm || {}) },
       createdAt: p.createdAt || Date.now(),
     }));
     const dbProfiles: DBProfile[] = old.map((p) => ({
-      id: p.id,
-      name: p.name,
-      config: p.db || { ...defaultDB },
+      id: p.id || crypto.randomUUID(),
+      name: p.name || "默认数据库",
+      config: normalizeLegacyDB(p.db),
       createdAt: p.createdAt || Date.now(),
     }));
     const llmActive = llmProfiles[0].id;

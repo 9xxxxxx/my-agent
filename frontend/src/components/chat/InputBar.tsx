@@ -12,15 +12,13 @@ interface Props {
 }
 
 export default function InputBar({ onSend, disabled, defaultValue }: Props) {
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(defaultValue ?? "");
   const fileRef = useRef<HTMLInputElement>(null);
   const addMessage = useChatStore((s) => s.addMessage);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // 编辑模式：填充内容并聚焦
   useEffect(() => {
     if (defaultValue) {
-      setInput(defaultValue);
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
   }, [defaultValue]);

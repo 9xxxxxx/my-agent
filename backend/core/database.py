@@ -1,6 +1,6 @@
 """SQLAlchemy 引擎管理 + 连接池"""
 import os
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 import pandas as pd
@@ -39,9 +39,14 @@ def get_app_session() -> Session:
     return Session(get_app_engine())
 
 
-def set_current_db_url(url: str | None):
+def set_current_db_url(url: str | None) -> Token[str | None]:
     """Set the database URL for the current request context."""
-    _current_db_url.set(url)
+    return _current_db_url.set(url)
+
+
+def reset_current_db_url(token: Token[str | None]) -> None:
+    """Reset the database URL for the current request context."""
+    _current_db_url.reset(token)
 
 
 def get_engine_by_url(url: str):

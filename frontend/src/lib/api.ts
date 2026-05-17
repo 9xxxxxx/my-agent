@@ -3,7 +3,7 @@ import type { LLMConfig } from "@/stores/chat";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export interface ChatEvent {
-  type: "text_delta" | "reasoning_delta" | "tool_call" | "tool_result" | "chart" | "agent_change" | "handoff" | "error" | "done";
+  type: "text_delta" | "reasoning_delta" | "tool_call" | "tool_result" | "chart" | "agent_change" | "agent_status" | "handoff" | "error" | "done";
   content?: string;
   tool?: string;
   arguments?: string;
@@ -12,6 +12,10 @@ export interface ChatEvent {
   display_name?: string;
   target?: string;
   target_display?: string;
+  status?: "entered" | "running" | "done";
+  code?: string;
+  message?: string;
+  recoverable?: boolean;
 }
 
 export interface ChatHistoryMessage {

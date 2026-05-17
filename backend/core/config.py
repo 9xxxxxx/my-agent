@@ -17,6 +17,13 @@ class Settings:
     SMTP_PORT: int = int(os.getenv("SMTP_PORT", "465"))
     SMTP_USERNAME: str = os.getenv("SMTP_USERNAME", "")
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+    APP_ENV: str = os.getenv("APP_ENV", "development")
+    APP_TOKEN: str = os.getenv("APP_TOKEN", "")
+    CORS_ORIGINS: list[str] = [
+        origin.strip()
+        for origin in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+        if origin.strip()
+    ]
 
 
 settings = Settings()

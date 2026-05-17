@@ -28,3 +28,32 @@
 - Wrote implementation plan at `docs/superpowers/plans/2026-05-17-production-readiness-redesign.md`.
 - Added `.worktrees/` to `.gitignore` so isolated implementation worktrees do not pollute git status.
 - Worktree ignore verification failed for the directory path itself; added `.worktrees` alongside `.worktrees/`.
+- Created implementation worktree at `.worktrees/production-readiness` on branch `codex/production-readiness`.
+- Installed frontend and backend dependencies inside the worktree.
+- Started Task 1 by adding Vitest/pytest metadata and failing router/message tests.
+- Frontend RED check failed as expected because `src/lib/messages.ts` does not exist yet.
+- Backend RED check first failed because pytest could not import `core`; added `tests/conftest.py` to put the backend root on `sys.path`.
+- Implemented `frontend/src/lib/messages.ts`; focused Vitest message tests pass.
+- Refactored `frontend/src/stores/chat.ts` to store typed response blocks while retaining legacy fields for existing UI compatibility.
+- Updated ChatPanel, MessageBubble, and export/search helpers to use `messageToPlainText`.
+- Focused lint for chat/message files passes; full frontend lint still has known page/settings/connection issues scheduled for later tasks.
+- `pnpm build` passes after the message model refactor.
+- Built unified responsive shell components: `AppShell`, `ConversationSidebar`, and `RunInspector`.
+- Replaced the duplicated mobile/desktop page tree with a single `AppShell` entrypoint.
+- Added `MessageBlocks` and simplified `MessageBubble` around typed response blocks.
+- Fixed `InputBar` edit-mode state so it no longer trips React 19 `set-state-in-effect` lint.
+- Focused lint for the new shell/message/InputBar files passes; `pnpm build` passes.
+- Cleaned remaining frontend lint errors in settings and connection profile migration.
+- Full `pnpm lint`, focused Vitest message tests, and `pnpm build` pass.
+- Added deterministic backend router and safe SSE error payload mapping.
+- Chat endpoint now selects the specialist agent directly, emits `agent_status`, and resets request-scoped DB context after streaming.
+- Backend router/error tests pass; focused backend compile check passes.
+- Added upload/export path containment and profile secret redaction.
+- CORS origins now come from `CORS_ORIGINS`.
+- Backend path/redaction tests pass; focused backend compile check passes.
+- Full verification passed: `pnpm lint`, `pnpm test`, `pnpm build`, `uv run pytest tests -q`, and `uv run python -m compileall app.py api core tools`.
+- Browser QA used `pnpm start -- --port 3004` because `next dev` returned a Turbopack internal Google font module 500 in this worktree.
+- Browser QA confirmed the production page returns 200, the mobile-width shell has no horizontal overflow, and the sidebar sheet opens correctly.
+- Updated README with production readiness checks and deployment notes.
+- Final verification initially exposed a build failure caused by `next/font/google` requiring fonts.gstatic.com; replaced Google font imports with local system font variables.
+- Fresh final checks passed after the font change: `pnpm lint`, `pnpm test`, `pnpm build`, `uv run pytest tests -q`, and `uv run python -m compileall app.py api core tools`.

@@ -7,6 +7,7 @@ import { streamChat } from "@/lib/api";
 import MessageBubble from "./MessageBubble";
 import InputBar from "./InputBar";
 import { toast } from "sonner";
+import { createAssistantMessage, messageToPlainText } from "@/lib/messages";
 
 export default function ChatPanel() {
   const messages = useChatStore((s) => {
@@ -35,9 +36,7 @@ export default function ChatPanel() {
   const mode = useConnectionStore((s) => s.mode);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const [mounted, setMounted] = useState(false);
   const [editContent, setEditContent] = useState<string | null>(null);
-  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -49,23 +48,11 @@ export default function ChatPanel() {
     abortRef.current?.abort();
   }, []);
 
-  const handleRetry = useCallback(() => {
-    const state = useChatStore.getState();
-    const conv = state.conversations.find((c) => c.id === state.activeId);
-    const msgs = conv?.messages || [];
-    const lastUser = [...msgs].reverse().find((m) => m.role === "user");
-    if (!lastUser) return;
-    removeLastAssistant();
-    setTimeout(() => {
-      handleSend(lastUser.content);
-    }, 50);
-  }, [removeLastAssistant]);
-
   const handleEdit = useCallback((content: string) => {
     // 找到被编辑消息的索引，截断该消息及之后的所有消息
     const state = useChatStore.getState();
     const msgs = state.getMessages();
-    const idx = msgs.findIndex((m) => m.role === "user" && m.content === content);
+    const idx = msgs.findIndex((m) => m.role === "user" && messageToPlainText(m) === content);
     if (idx >= 0) {
       truncateFromIndex(idx);
     }
@@ -86,18 +73,12 @@ export default function ChatPanel() {
         .filter((m) => m.role === "user" || m.role === "assistant")
         .map((m) => ({
           role: m.role,
-          content: m.content,
+          content: messageToPlainText(m),
           reasoning: m.reasoning,
           toolCalls: m.toolCalls,
         }));
 
-      addMessage({
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: "",
-        toolCalls: [],
-        timestamp: Date.now(),
-      });
+      addMessage(createAssistantMessage(crypto.randomUUID()));
       setLoading(true);
       setCurrentTool(null);
       setCurrentAgent(null);
@@ -167,10 +148,22 @@ export default function ChatPanel() {
     [getActiveLLM, getActiveDB, assembleDbUrl, addMessage, appendToLastAssistant, appendToLastReasoning, addToolCall, setLastToolOutput, setLastChart, setLoading, setCurrentTool, setCurrentAgent, flushConversation, mode],
   );
 
+  const handleRetry = useCallback(() => {
+    const state = useChatStore.getState();
+    const conv = state.conversations.find((c) => c.id === state.activeId);
+    const msgs = conv?.messages || [];
+    const lastUser = [...msgs].reverse().find((m) => m.role === "user");
+    if (!lastUser) return;
+    removeLastAssistant();
+    window.setTimeout(() => {
+      void handleSend(messageToPlainText(lastUser));
+    }, 50);
+  }, [handleSend, removeLastAssistant]);
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div ref={scrollRef} className="flex-1 overflow-y-auto transition-opacity duration-200">
-        {!mounted || messages.length === 0 ? (
+        {messages.length === 0 ? (
           /* Empty state — centered welcome with input (ChatGPT style) */
           <div className="h-full flex flex-col items-center justify-center px-4 sm:px-6">
             <div className="max-w-[680px] w-full">
@@ -298,7 +291,7 @@ export default function ChatPanel() {
       </div>
 
       {/* Input bar with stop button — hidden during welcome state */}
-      {mounted && messages.length > 0 && (
+      {messages.length > 0 && (
         <div className="shrink-0 border-t border-[--border] safe-area-bottom">
           <div className="max-w-[1000px] mx-auto px-3 sm:px-4 py-3 sm:py-4">
             {isLoading ? (
@@ -313,6 +306,7 @@ export default function ChatPanel() {
               </button>
             ) : (
               <InputBar
+                key={editContent ?? "composer"}
                 onSend={(msg) => { setEditContent(null); handleSend(msg); }}
                 disabled={false}
                 defaultValue={editContent}

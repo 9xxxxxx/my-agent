@@ -1,8 +1,9 @@
 """文件上传端点"""
 import shutil
 from pathlib import Path
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, HTTPException
 from core.file_loader import load_file, list_file_tables
+from core.path_safety import safe_child_path
 
 router = APIRouter()
 
@@ -18,8 +19,11 @@ async def upload_file(file: UploadFile = File(...)):
     if suffix not in allowed:
         return {"error": f"不支持的文件格式: {suffix}。支持: {', '.join(allowed)}"}
 
-    # 保存文件
-    dest = UPLOAD_DIR / file.filename
+    try:
+        dest = safe_child_path(UPLOAD_DIR, file.filename or "")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     with open(dest, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
