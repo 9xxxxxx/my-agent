@@ -9,7 +9,7 @@ import InputBar from "./InputBar";
 import { toast } from "sonner";
 import { createAssistantMessage, messageToPlainText } from "@/lib/messages";
 
-export default function ChatPanel() {
+export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
   const messages = useChatStore((s) => {
     const conv = s.conversations.find((c) => c.id === s.activeId);
     return conv?.messages || [];
@@ -78,6 +78,13 @@ export default function ChatPanel() {
           toolCalls: m.toolCalls,
         }));
 
+      // Add user message AFTER building history to avoid sending it twice
+      addMessage({
+        id: crypto.randomUUID(),
+        role: "user",
+        content: message,
+        timestamp: Date.now(),
+      });
       addMessage(createAssistantMessage(crypto.randomUUID()));
       setLoading(true);
       setCurrentTool(null);
@@ -163,7 +170,7 @@ export default function ChatPanel() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div ref={scrollRef} className="flex-1 overflow-y-auto transition-opacity duration-200">
-        {messages.length === 0 ? (
+        {!mounted || messages.length === 0 ? (
           /* Empty state — centered welcome with input (ChatGPT style) */
           <div className="h-full flex flex-col items-center justify-center px-4 sm:px-6">
             <div className="max-w-[680px] w-full">

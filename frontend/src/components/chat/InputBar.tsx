@@ -26,12 +26,6 @@ export default function InputBar({ onSend, disabled, defaultValue }: Props) {
   const handleSend = () => {
     const trimmed = input.trim();
     if (!trimmed || disabled) return;
-    addMessage({
-      id: crypto.randomUUID(),
-      role: "user",
-      content: trimmed,
-      timestamp: Date.now(),
-    });
     onSend(trimmed);
     setInput("");
   };

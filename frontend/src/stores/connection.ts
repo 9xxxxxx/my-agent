@@ -261,8 +261,8 @@ async function syncFromBackend() {
       saveJSON(DB_KEY, dbProfiles);
       saveJSON(DB_ACTIVE, activeDBId);
     }
-  } catch {
-    // Backend unavailable, use localStorage
+  } catch (e) {
+    console.warn("[connection] Backend sync failed, using localStorage:", e);
   }
 }
 

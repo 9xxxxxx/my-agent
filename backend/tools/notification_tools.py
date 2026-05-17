@@ -100,7 +100,7 @@ def send_email_notification(
     to_address: str, subject: str, body: str,
 ) -> str:
     """通过 SMTP 发送邮件通知。用于发送分析报告给指定收件人。"""
-    import aiosmtplib
+    import smtplib
     from email.mime.text import MIMEText
 
     if not settings.SMTP_SERVER or not settings.SMTP_USERNAME:
@@ -112,17 +112,9 @@ def send_email_notification(
     msg["Subject"] = subject
 
     try:
-        import asyncio
-        asyncio.get_event_loop().run_until_complete(
-            aiosmtplib.send(
-                msg,
-                hostname=settings.SMTP_SERVER,
-                port=settings.SMTP_PORT,
-                username=settings.SMTP_USERNAME,
-                password=settings.SMTP_PASSWORD,
-                use_tls=True,
-            )
-        )
+        with smtplib.SMTP_SSL(settings.SMTP_SERVER, settings.SMTP_PORT) as server:
+            server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+            server.send_message(msg)
         return f"邮件已成功发送至 {to_address}"
     except Exception as e:
         return f"邮件发送失败: {e}"

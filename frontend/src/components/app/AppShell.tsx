@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { Download, Menu, Settings } from "lucide-react";
 import ChatPanel from "@/components/chat/ChatPanel";
 import SettingsPanel from "@/components/settings/SettingsPanel";
@@ -25,7 +25,11 @@ function exportConversation(title: string, messages: ReturnType<typeof useChatSt
   return lines.join("\n");
 }
 
+const emptySubscribe = () => () => {};
+const isClient = () => typeof window !== "undefined";
+
 export default function AppShell() {
+  const mounted = useSyncExternalStore(emptySubscribe, isClient, () => false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const conversations = useChatStore((state) => state.conversations);
@@ -44,6 +48,8 @@ export default function AppShell() {
     [activeId, conversations],
   );
 
+  const displayConversations = mounted ? conversations : [];
+
   const handleExport = async () => {
     if (!activeConversation) return;
     try {
@@ -58,7 +64,7 @@ export default function AppShell() {
     <div className="grid h-dvh grid-cols-1 overflow-hidden bg-[--background] lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_300px]">
       <div className="hidden min-h-0 lg:block">
         <ConversationSidebar
-          conversations={conversations}
+          conversations={displayConversations}
           activeId={activeId}
           onCreate={createConversation}
           onSelect={switchConversation}
@@ -71,7 +77,7 @@ export default function AppShell() {
         <SheetContent side="left" showCloseButton={false} className="w-[320px] max-w-[90vw] gap-0 p-0">
           <SheetTitle className="sr-only">对话列表</SheetTitle>
           <ConversationSidebar
-            conversations={conversations}
+            conversations={displayConversations}
             activeId={activeId}
             onCreate={() => {
               createConversation();
@@ -96,12 +102,12 @@ export default function AppShell() {
             <Menu size={18} />
           </button>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[14px] font-semibold text-[--foreground]">{activeConversation?.title || "数据分析助手"}</div>
+            <div className="truncate text-[14px] font-semibold text-[--foreground]">{mounted ? (activeConversation?.title || "数据分析助手") : "数据分析助手"}</div>
             <div className="truncate text-[11px] text-[--muted-foreground]">
-              {activeLLM?.config.model || "未配置模型"} · {activeDB?.name || "未连接数据源"} · {currentAgent || "待命"}
+              {mounted ? (`${activeLLM?.config.model || "未配置模型"} · ${activeDB?.name || "未连接数据源"} · ${currentAgent || "待命"}`) : "未配置模型 · 未连接数据源 · 待命"}
             </div>
           </div>
-          {activeConversation && activeConversation.messages.length > 0 && (
+          {mounted && activeConversation && activeConversation.messages.length > 0 && (
             <button className="rounded-md p-2 text-[--muted-foreground] hover:bg-[--muted]" onClick={handleExport} aria-label="导出对话">
               <Download size={17} />
             </button>
@@ -110,7 +116,7 @@ export default function AppShell() {
             <Settings size={17} />
           </button>
         </header>
-        <ChatPanel />
+        <ChatPanel mounted={mounted} />
       </main>
 
       <RunInspector messages={messages} currentAgent={currentAgent} currentTool={currentTool} />

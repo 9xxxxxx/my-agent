@@ -1,6 +1,17 @@
 import type { LLMConfig } from "@/stores/chat";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const APP_TOKEN = process.env.NEXT_PUBLIC_APP_TOKEN || "";
+
+function authHeaders(): Record<string, string> {
+  const h: Record<string, string> = { "Content-Type": "application/json" };
+  if (APP_TOKEN) h["Authorization"] = `Bearer ${APP_TOKEN}`;
+  return h;
+}
+
+function logApiError(e: unknown): void {
+  console.warn("[api] Request failed:", e);
+}
 
 export interface ChatEvent {
   type: "text_delta" | "reasoning_delta" | "tool_call" | "tool_result" | "chart" | "agent_change" | "agent_status" | "handoff" | "error" | "done";
@@ -45,7 +56,7 @@ export async function* streamChat(
 
   const response = await fetch(`${API_BASE}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(),
     body: JSON.stringify(body),
     signal,
   });
@@ -90,8 +101,11 @@ export async function uploadFile(file: File): Promise<{
   const form = new FormData();
   form.append("file", file);
 
+  const headers: Record<string, string> = {};
+  if (APP_TOKEN) headers["Authorization"] = `Bearer ${APP_TOKEN}`;
   const response = await fetch(`${API_BASE}/api/upload`, {
     method: "POST",
+    headers,
     body: form,
   });
 
@@ -101,7 +115,9 @@ export async function uploadFile(file: File): Promise<{
 export async function getUploadedTables(): Promise<{
   tables: Array<{ table_name: string; source_file: string; rows: number; columns: number }>;
 }> {
-  const response = await fetch(`${API_BASE}/api/upload/tables`);
+  const headers: Record<string, string> = {};
+  if (APP_TOKEN) headers["Authorization"] = `Bearer ${APP_TOKEN}`;
+  const response = await fetch(`${API_BASE}/api/upload/tables`, { headers });
   return response.json();
 }
 
@@ -111,7 +127,7 @@ export async function testConnection(databaseUrl: string): Promise<{
 }> {
   const response = await fetch(`${API_BASE}/api/db/test`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(),
     body: JSON.stringify({ database_url: databaseUrl }),
   });
   return response.json();
@@ -164,9 +180,9 @@ export async function saveConversation(conv: {
 }): Promise<void> {
   await fetch(`${API_BASE}/api/conversations`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(),
     body: JSON.stringify(conv),
-  }).catch(() => {});
+  }).catch(logApiError);
 }
 
 export async function updateConversation(id: string, patch: {
@@ -176,15 +192,16 @@ export async function updateConversation(id: string, patch: {
 }): Promise<void> {
   await fetch(`${API_BASE}/api/conversations/${id}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(),
     body: JSON.stringify(patch),
-  }).catch(() => {});
+  }).catch(logApiError);
 }
 
 export async function deleteConversationApi(id: string): Promise<void> {
   await fetch(`${API_BASE}/api/conversations/${id}`, {
     method: "DELETE",
-  }).catch(() => {});
+    headers: authHeaders(),
+  }).catch(logApiError);
 }
 
 // LLM Profiles
@@ -203,29 +220,31 @@ export async function saveLLMProfile(profile: {
 }): Promise<void> {
   await fetch(`${API_BASE}/api/connections/llm`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(),
     body: JSON.stringify(profile),
-  }).catch(() => {});
+  }).catch(logApiError);
 }
 
 export async function updateLLMProfile(id: string, patch: { name?: string; config?: Record<string, unknown> }): Promise<void> {
   await fetch(`${API_BASE}/api/connections/llm/${id}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(),
     body: JSON.stringify(patch),
-  }).catch(() => {});
+  }).catch(logApiError);
 }
 
 export async function deleteLLMProfileApi(id: string): Promise<void> {
   await fetch(`${API_BASE}/api/connections/llm/${id}`, {
     method: "DELETE",
-  }).catch(() => {});
+    headers: authHeaders(),
+  }).catch(logApiError);
 }
 
 export async function activateLLMProfile(id: string): Promise<void> {
   await fetch(`${API_BASE}/api/connections/llm/${id}/activate`, {
     method: "PUT",
-  }).catch(() => {});
+    headers: authHeaders(),
+  }).catch(logApiError);
 }
 
 // DB Profiles
@@ -244,27 +263,29 @@ export async function saveDBProfile(profile: {
 }): Promise<void> {
   await fetch(`${API_BASE}/api/connections/db`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(),
     body: JSON.stringify(profile),
-  }).catch(() => {});
+  }).catch(logApiError);
 }
 
 export async function updateDBProfile(id: string, patch: { name?: string; config?: Record<string, unknown> }): Promise<void> {
   await fetch(`${API_BASE}/api/connections/db/${id}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(),
     body: JSON.stringify(patch),
-  }).catch(() => {});
+  }).catch(logApiError);
 }
 
 export async function deleteDBProfileApi(id: string): Promise<void> {
   await fetch(`${API_BASE}/api/connections/db/${id}`, {
     method: "DELETE",
-  }).catch(() => {});
+    headers: authHeaders(),
+  }).catch(logApiError);
 }
 
 export async function activateDBProfile(id: string): Promise<void> {
   await fetch(`${API_BASE}/api/connections/db/${id}/activate`, {
     method: "PUT",
-  }).catch(() => {});
+    headers: authHeaders(),
+  }).catch(logApiError);
 }

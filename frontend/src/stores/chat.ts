@@ -151,7 +151,8 @@ async function syncFromBackend() {
             createdAt: detail.created_at,
             updatedAt: detail.updated_at,
           });
-        } catch {
+        } catch (e) {
+          console.warn("[chat] Failed to fetch conversation", summary.id, e);
           return null;
         }
       }),
@@ -166,8 +167,8 @@ async function syncFromBackend() {
         saveActiveId(convs[0].id);
       }
     }
-  } catch {
-    // Backend unavailable, use localStorage.
+  } catch (e) {
+    console.warn("[chat] Backend sync failed, using localStorage:", e);
   }
 }
 

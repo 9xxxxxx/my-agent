@@ -1,5 +1,6 @@
 """SSE 流式对话端点"""
 import json
+import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -9,6 +10,8 @@ from core.llm import create_llm_model
 from core.database import reset_current_db_url, set_current_db_url
 from core.errors import safe_error_payload
 from core.router import classify_intent
+
+logger = logging.getLogger("chat")
 
 router = APIRouter()
 
@@ -97,28 +100,19 @@ async def chat(req: ChatRequest, request: Request):
             else:
                 result = Runner.run_streamed(agent, req.message)
 
-            # ── Prod 模式文本过滤 ──
-            # 策略：只输出非 Orchestrator Agent 的文本，Orchestrator 的文本全部丢弃。
             current_agent_name = route.agent_name
 
             async for event in result.stream_events():
-                # 原始响应事件
                 if event.type == "raw_response_event":
                     dtype = getattr(event.data, "type", "")
 
                     if dtype == "response.output_text.delta":
-                        delta = event.data.delta
-                        if is_dev:
-                            yield sse("text_delta", content=delta)
-                        else:
-                            # 只有 specialist agent 的文本才输出
-                            yield sse("text_delta", content=delta)
+                        yield sse("text_delta", content=event.data.delta)
 
                     elif dtype in ("response.reasoning_summary_text.delta", "response.reasoning_text.delta"):
                         if is_dev:
                             yield sse("reasoning_delta", content=event.data.delta)
 
-                # Agent 切换事件
                 elif event.type == "agent_updated_stream_event":
                     new_name = getattr(event.new_agent, "name", "unknown")
                     current_agent_name = new_name
@@ -126,7 +120,6 @@ async def chat(req: ChatRequest, request: Request):
                         display_name = AGENT_DISPLAY_NAMES.get(new_name, new_name)
                         yield sse("agent_change", agent=new_name, display_name=display_name)
 
-                # 运行项事件
                 elif event.type == "run_item_stream_event":
                     if event.item.type == "handoff_call_item":
                         if is_dev:
@@ -154,8 +147,8 @@ async def chat(req: ChatRequest, request: Request):
             yield sse("done")
 
         except Exception as e:
-            import logging, traceback
-            logging.getLogger("chat").error("CHAT ERROR: %s\n%s", e, traceback.format_exc())
+            import traceback
+            logger.error("CHAT ERROR: %s\n%s", e, traceback.format_exc())
             yield f"data: {json.dumps(safe_error_payload(e), ensure_ascii=False)}\n\n"
         finally:
             if db_token is not None:
