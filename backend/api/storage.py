@@ -37,6 +37,17 @@ class ProfileUpdate(BaseModel):
     config: dict | None = None
 
 
+def redact_config(config: dict) -> dict:
+    redacted = dict(config or {})
+    if redacted.get("apiKey"):
+        redacted["apiKey"] = ""
+        redacted["hasApiKey"] = True
+    if redacted.get("password"):
+        redacted["password"] = ""
+        redacted["hasPassword"] = True
+    return redacted
+
+
 # ── Conversations ──
 
 @router.get("/api/conversations")
@@ -119,7 +130,7 @@ def list_llm_profiles():
     with get_app_session() as session:
         rows = session.query(LLMProfileRow).order_by(LLMProfileRow.created_at).all()
         return [
-            {"id": r.id, "name": r.name, "config": r.config, "is_active": r.is_active, "created_at": r.created_at}
+            {"id": r.id, "name": r.name, "config": redact_config(r.config), "is_active": r.is_active, "created_at": r.created_at}
             for r in rows
         ]
 
@@ -179,7 +190,7 @@ def list_db_profiles():
     with get_app_session() as session:
         rows = session.query(DBProfileRow).order_by(DBProfileRow.created_at).all()
         return [
-            {"id": r.id, "name": r.name, "config": r.config, "is_active": r.is_active, "created_at": r.created_at}
+            {"id": r.id, "name": r.name, "config": redact_config(r.config), "is_active": r.is_active, "created_at": r.created_at}
             for r in rows
         ]
 

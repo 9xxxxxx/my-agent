@@ -8,6 +8,7 @@ from api.export import router as export_router
 from api.db import router as db_router
 from api.storage import router as storage_router
 from core.database import init_app_db
+from core.config import settings
 
 load_dotenv(override=True)
 
@@ -15,7 +16,7 @@ app = FastAPI(title="Data Analyst Agent", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

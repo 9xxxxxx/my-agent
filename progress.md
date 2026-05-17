@@ -48,3 +48,6 @@
 - Added deterministic backend router and safe SSE error payload mapping.
 - Chat endpoint now selects the specialist agent directly, emits `agent_status`, and resets request-scoped DB context after streaming.
 - Backend router/error tests pass; focused backend compile check passes.
+- Added upload/export path containment and profile secret redaction.
+- CORS origins now come from `CORS_ORIGINS`.
+- Backend path/redaction tests pass; focused backend compile check passes.
