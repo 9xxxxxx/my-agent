@@ -38,3 +38,8 @@
 - Updated ChatPanel, MessageBubble, and export/search helpers to use `messageToPlainText`.
 - Focused lint for chat/message files passes; full frontend lint still has known page/settings/connection issues scheduled for later tasks.
 - `pnpm build` passes after the message model refactor.
+- Built unified responsive shell components: `AppShell`, `ConversationSidebar`, and `RunInspector`.
+- Replaced the duplicated mobile/desktop page tree with a single `AppShell` entrypoint.
+- Added `MessageBlocks` and simplified `MessageBubble` around typed response blocks.
+- Fixed `InputBar` edit-mode state so it no longer trips React 19 `set-state-in-effect` lint.
+- Focused lint for the new shell/message/InputBar files passes; `pnpm build` passes.

@@ -306,6 +306,7 @@ export default function ChatPanel() {
               </button>
             ) : (
               <InputBar
+                key={editContent ?? "composer"}
                 onSend={(msg) => { setEditContent(null); handleSend(msg); }}
                 disabled={false}
                 defaultValue={editContent}
