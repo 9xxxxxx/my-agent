@@ -1,24 +1,37 @@
 "use client";
 
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import { useChatStore } from "@/stores/chat";
+import { useConnectionStore } from "@/stores/connection";
 import { streamChat } from "@/lib/api";
 import MessageBubble from "./MessageBubble";
 import InputBar from "./InputBar";
 import { toast } from "sonner";
 
 export default function ChatPanel() {
-  const messages = useChatStore((s) => s.messages);
+  const messages = useChatStore((s) => {
+    const conv = s.conversations.find((c) => c.id === s.activeId);
+    return conv?.messages || [];
+  });
   const isLoading = useChatStore((s) => s.isLoading);
   const currentTool = useChatStore((s) => s.currentTool);
-  const llmConfig = useChatStore((s) => s.llmConfig);
   const addMessage = useChatStore((s) => s.addMessage);
   const appendToLastAssistant = useChatStore((s) => s.appendToLastAssistant);
+  const appendToLastReasoning = useChatStore((s) => s.appendToLastReasoning);
+  const addToolCall = useChatStore((s) => s.addToolCall);
+  const setLastToolOutput = useChatStore((s) => s.setLastToolOutput);
   const setLastChart = useChatStore((s) => s.setLastChart);
+  const removeLastAssistant = useChatStore((s) => s.removeLastAssistant);
+  const flushConversation = useChatStore((s) => s.flushConversation);
   const setLoading = useChatStore((s) => s.setLoading);
   const setCurrentTool = useChatStore((s) => s.setCurrentTool);
+  const getActiveLLM = useConnectionStore((s) => s.getActiveLLM);
+  const getActiveDB = useConnectionStore((s) => s.getActiveDB);
+  const assembleDbUrl = useConnectionStore((s) => s.assembleDbUrl);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -26,8 +39,40 @@ export default function ChatPanel() {
     }
   }, [messages]);
 
+  const handleStop = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
+  const handleRetry = useCallback(() => {
+    const state = useChatStore.getState();
+    const conv = state.conversations.find((c) => c.id === state.activeId);
+    const msgs = conv?.messages || [];
+    const lastUser = [...msgs].reverse().find((m) => m.role === "user");
+    if (!lastUser) return;
+    removeLastAssistant();
+    setTimeout(() => {
+      handleSend(lastUser.content);
+    }, 50);
+  }, [removeLastAssistant]);
+
   const handleSend = useCallback(
     async (message: string) => {
+      const llm = getActiveLLM();
+      if (!llm) {
+        toast.error("请先在连接设置中配置 LLM");
+        return;
+      }
+
+      const currentMessages = useChatStore.getState().getMessages();
+      const history = currentMessages
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({
+          role: m.role,
+          content: m.content,
+          reasoning: m.reasoning,
+          toolCalls: m.toolCalls,
+        }));
+
       addMessage({
         id: crypto.randomUUID(),
         role: "assistant",
@@ -39,27 +84,32 @@ export default function ChatPanel() {
       setCurrentTool(null);
 
       abortRef.current = new AbortController();
-      const toolCalls: string[] = [];
+      const dbProfile = getActiveDB() ?? undefined;
+      const dbUrl = assembleDbUrl(dbProfile);
 
       try {
-        for await (const event of streamChat(message, llmConfig, abortRef.current.signal)) {
+        for await (const event of streamChat(message, llm.config, abortRef.current.signal, dbUrl || undefined, history)) {
           switch (event.type) {
             case "text_delta":
               appendToLastAssistant(event.content || "");
               break;
+            case "reasoning_delta":
+              appendToLastReasoning(event.content || "");
+              break;
             case "tool_call":
               if (event.tool) {
-                toolCalls.push(event.tool);
+                addToolCall({ name: event.tool, arguments: event.arguments });
                 setCurrentTool(event.tool);
               }
+              break;
+            case "tool_result":
+              setLastToolOutput(event.call_id, event.content || "");
+              setCurrentTool(null);
               break;
             case "chart":
               try {
                 setLastChart(JSON.parse(event.content || "{}"));
               } catch {}
-              break;
-            case "tool_result":
-              setCurrentTool(null);
               break;
             case "error":
               toast.error(event.content || "发生错误");
@@ -75,66 +125,117 @@ export default function ChatPanel() {
         setLoading(false);
         setCurrentTool(null);
         abortRef.current = null;
+        flushConversation();
       }
     },
-    [llmConfig, addMessage, appendToLastAssistant, setLastChart, setLoading, setCurrentTool],
+    [getActiveLLM, getActiveDB, assembleDbUrl, addMessage, appendToLastAssistant, appendToLastReasoning, addToolCall, setLastToolOutput, setLastChart, setLoading, setCurrentTool, flushConversation],
   );
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        {messages.length === 0 ? (
-          /* 空状态 */
-          <div className="h-full flex flex-col items-center justify-center px-6">
-            <div className="max-w-md text-center">
-              <div className="w-12 h-12 rounded-2xl bg-[#e8e7e4] mx-auto mb-5 flex items-center justify-center">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5a5a52" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto transition-opacity duration-200">
+        {!mounted || messages.length === 0 ? (
+          /* Empty state — centered welcome */
+          <div className="h-full flex flex-col items-center justify-center px-4 sm:px-6 pb-24 sm:pb-32">
+            <div className="max-w-md w-full text-center">
+              {/* Logo */}
+              <div className="w-10 h-10 rounded-xl bg-[--muted] mx-auto mb-6 flex items-center justify-center">
+                <svg className="w-5 h-5 text-[--muted-foreground]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
                 </svg>
               </div>
-              <h2 className="text-lg font-medium text-[#2d2d2d] mb-2">数据分析助手</h2>
-              <p className="text-[13px] text-[#7a7a72] leading-relaxed mb-8">
-                上传数据文件或连接数据库，用自然语言提问，<br />我会帮你分析数据、生成图表和报告。
+
+              {/* Title */}
+              <h1 className="text-[22px] font-bold text-[--foreground] mb-2 tracking-tight">数据分析助手</h1>
+              <p className="text-[14px] text-[--muted-foreground] leading-relaxed mb-8">
+                上传数据文件或连接数据库，用自然语言提问
               </p>
-              <div className="flex flex-col gap-2">
+
+              {/* Quick actions — list style */}
+              <div className="space-y-1" role="list" aria-label="快捷操作">
                 {[
-                  { icon: " ", text: "帮我分析销售数据的趋势" },
-                  { icon: " ", text: "上传的 CSV 有哪些字段" },
-                  { icon: " ", text: "生成一份月度分析报告" },
+                  {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>,
+                    title: "数据趋势分析",
+                    desc: "分析销售数据的变化趋势",
+                  },
+                  {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>,
+                    title: "探索数据结构",
+                    desc: "查看表结构和字段信息",
+                  },
+                  {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>,
+                    title: "生成分析报告",
+                    desc: "自动生成月度数据报告",
+                  },
+                  {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>,
+                    title: "对比分析",
+                    desc: "对比不同时间段的数据",
+                  },
                 ].map((q) => (
                   <button
-                    key={q.text}
-                    onClick={() => handleSend(q.text)}
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl border border-[#e5e4e1] bg-white hover:bg-[#f9f9f7] text-left text-[13px] text-[#5a5a52] transition-colors"
+                    key={q.title}
+                    onClick={() => handleSend(q.desc)}
+                    className="group flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-left hover:bg-[--muted] transition-colors cursor-pointer"
+                    role="listitem"
                   >
-                    <span className="text-base">{q.icon}</span>
-                    {q.text}
+                    <span className="text-[--muted-foreground] group-hover:text-[--foreground] transition-colors">
+                      {q.icon}
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-[14px] text-[--foreground]">{q.title}</span>
+                    </span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[--muted-foreground] opacity-0 group-hover:opacity-100 transition-opacity">
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
                   </button>
                 ))}
               </div>
             </div>
           </div>
         ) : (
-          /* 消息列表 */
-          <div className="max-w-[720px] mx-auto px-6 py-6 space-y-1">
-            {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
+          /* Message list */
+          <div className="max-w-[900px] mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4">
+            {messages.map((msg, i) => (
+              <div key={msg.id} className="message-enter">
+                <MessageBubble
+                  message={msg}
+                  onRetry={
+                    msg.role === "assistant" && i === messages.length - 1 && !isLoading
+                      ? handleRetry
+                      : undefined
+                  }
+                />
+              </div>
             ))}
 
-            {/* 工具调用指示 */}
             {isLoading && currentTool && (
-              <div className="flex items-center gap-2 py-3 text-[12px] text-[#9a9a92]">
-                <div className="w-1.5 h-1.5 rounded-full bg-[#5a7c6f] animate-pulse" />
-                <span>正在调用 {currentTool}</span>
+              <div className="flex items-center gap-3 py-2 message-enter" role="status" aria-live="polite">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[--muted]">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+                  </svg>
+                </div>
+                <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[--muted] text-[13px] text-[--muted-foreground]">
+                  <div className="w-1.5 h-1.5 rounded-full bg-[--muted-foreground] animate-pulse" />
+                  <span>正在调用 <span className="font-mono font-medium text-[--foreground]">{currentTool}</span></span>
+                </div>
               </div>
             )}
 
             {isLoading && !currentTool && (
-              <div className="flex items-center gap-2 py-3">
-                <div className="flex gap-1">
-                  <div className="w-1.5 h-1.5 rounded-full bg-[#b0afa8] animate-bounce" style={{ animationDelay: "0ms" }} />
-                  <div className="w-1.5 h-1.5 rounded-full bg-[#b0afa8] animate-bounce" style={{ animationDelay: "150ms" }} />
-                  <div className="w-1.5 h-1.5 rounded-full bg-[#b0afa8] animate-bounce" style={{ animationDelay: "300ms" }} />
+              <div className="flex items-center gap-3 py-2 message-enter" role="status" aria-live="polite">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[--muted]">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
+                  </svg>
+                </div>
+                <div className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-[--muted]">
+                  <div className="w-1.5 h-1.5 rounded-full bg-[--muted-foreground] animate-bounce" style={{ animationDelay: "0ms" }} />
+                  <div className="w-1.5 h-1.5 rounded-full bg-[--muted-foreground]/70 animate-bounce" style={{ animationDelay: "150ms" }} />
+                  <div className="w-1.5 h-1.5 rounded-full bg-[--muted-foreground]/40 animate-bounce" style={{ animationDelay: "300ms" }} />
                 </div>
               </div>
             )}
@@ -142,7 +243,24 @@ export default function ChatPanel() {
         )}
       </div>
 
-      <InputBar onSend={handleSend} disabled={isLoading} />
+      {/* Input bar with stop button */}
+      <div className="shrink-0 border-t border-[--border] safe-area-bottom">
+        <div className="max-w-[900px] mx-auto px-3 sm:px-4 py-3 sm:py-4">
+          {isLoading ? (
+            <button
+              onClick={handleStop}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-[--border] hover:bg-[--muted] text-[13px] text-[--muted-foreground] hover:text-[--foreground] transition-colors cursor-pointer"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="6" y="6" width="12" height="12" rx="2" />
+              </svg>
+              停止生成
+            </button>
+          ) : (
+            <InputBar onSend={handleSend} disabled={false} />
+          )}
+        </div>
+      </div>
     </div>
   );
 }
