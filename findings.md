@@ -77,3 +77,4 @@
 - Full frontend lint now passes after removing hydration-only `mounted` effects and broad `any` usage in settings/profile migration.
 - Backend deterministic routing now bypasses prompt-only orchestration for initial agent selection and emits `agent_status` SSE events.
 - Upload/export filename containment and profile redaction are covered by backend tests.
+- The app no longer depends on `next/font/google` during build; this avoids CI/build failures when fonts.gstatic.com is unavailable.

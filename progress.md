@@ -55,3 +55,5 @@
 - Browser QA used `pnpm start -- --port 3004` because `next dev` returned a Turbopack internal Google font module 500 in this worktree.
 - Browser QA confirmed the production page returns 200, the mobile-width shell has no horizontal overflow, and the sidebar sheet opens correctly.
 - Updated README with production readiness checks and deployment notes.
+- Final verification initially exposed a build failure caused by `next/font/google` requiring fonts.gstatic.com; replaced Google font imports with local system font variables.
+- Fresh final checks passed after the font change: `pnpm lint`, `pnpm test`, `pnpm build`, `uv run pytest tests -q`, and `uv run python -m compileall app.py api core tools`.
