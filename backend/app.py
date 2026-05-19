@@ -11,6 +11,7 @@ from api.upload import router as upload_router
 from api.export import router as export_router
 from api.db import router as db_router
 from api.storage import router as storage_router
+from api.reports import router as reports_router
 from core.database import init_app_db
 from core.config import settings
 
@@ -44,6 +45,7 @@ app.include_router(upload_router)
 app.include_router(export_router)
 app.include_router(db_router)
 app.include_router(storage_router)
+app.include_router(reports_router)
 
 # 启动时初始化应用内部 SQLite
 init_app_db()
