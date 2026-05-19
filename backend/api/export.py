@@ -1,16 +1,25 @@
 """报告/数据导出端点"""
 import tempfile
 from pathlib import Path
+from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from core.path_safety import safe_child_path
 from core.pdf_generator import PDFGenerator
 from core.report_service import ReportService
+from core.data_exporter import DataExporter
+from core.database import run_query_to_dataframe
 
 router = APIRouter()
 
 pdf_generator = PDFGenerator()
 report_service = ReportService()
+data_exporter = DataExporter()
+
+
+class ExportQueryRequest(BaseModel):
+    sql: str
+    database: str = ""
 
 
 @router.get("/api/export/report/{filename}")
@@ -54,3 +63,51 @@ async def export_report_pdf(report_id: str):
         if tmp_path.exists():
             tmp_path.unlink()
         raise HTTPException(status_code=500, detail=f"PDF 生成失败: {str(e)}")
+
+
+@router.post("/api/export/query/excel")
+async def export_query_excel(request: ExportQueryRequest):
+    """将查询结果导出为 Excel"""
+    try:
+        df = run_query_to_dataframe(request.sql, request.database or None)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"查询失败: {str(e)}")
+
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+
+    try:
+        data_exporter.export_excel(df, tmp_path, title="查询结果")
+        return FileResponse(
+            tmp_path,
+            filename="query_result.xlsx",
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except Exception as e:
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise HTTPException(status_code=500, detail=f"Excel 导出失败: {str(e)}")
+
+
+@router.post("/api/export/query/csv")
+async def export_query_csv(request: ExportQueryRequest):
+    """将查询结果导出为 CSV"""
+    try:
+        df = run_query_to_dataframe(request.sql, request.database or None)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"查询失败: {str(e)}")
+
+    with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+
+    try:
+        data_exporter.export_csv(df, tmp_path)
+        return FileResponse(
+            tmp_path,
+            filename="query_result.csv",
+            media_type="text/csv",
+        )
+    except Exception as e:
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise HTTPException(status_code=500, detail=f"CSV 导出失败: {str(e)}")
