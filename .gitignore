@@ -34,5 +34,5 @@ backend/uploads/*
 *.db-shm
 *.db-wal
 
-# Reports
-reports/
+# Reports (generated output, not frontend source)
+/reports/
