@@ -18,13 +18,14 @@ class ReportService:
     def __init__(self):
         REPORTS_DIR.mkdir(exist_ok=True)
 
-    def _generate_filename(self, title: str) -> str:
-        """生成安全的文件名"""
+    def _generate_filename(self, title: str, report_id: str) -> str:
+        """生成安全的文件名（包含 UUID 避免碰撞）"""
         safe_title = re.sub(r"[^a-zA-Z0-9_\-一-鿿]", "_", title).strip("_")[:100]
         if not safe_title:
             safe_title = "report"
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        return f"{safe_title}_{timestamp}.md"
+        short_id = report_id[:8]
+        return f"{safe_title}_{timestamp}_{short_id}.md"
 
     def _compute_hash(self, content: str) -> str:
         """计算内容哈希"""
@@ -48,7 +49,7 @@ class ReportService:
     ) -> ReportRow:
         """创建新报告"""
         report_id = str(uuid.uuid4())
-        filename = self._generate_filename(title)
+        filename = self._generate_filename(title, report_id)
         file_path = REPORTS_DIR / filename
 
         # 写入文件
