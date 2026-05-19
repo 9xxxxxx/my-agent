@@ -42,14 +42,12 @@ export async function* streamChat(
   signal?: AbortSignal,
   databaseUrl?: string,
   history?: ChatHistoryMessage[],
-  mode: "dev" | "prod" = "prod",
 ): AsyncGenerator<ChatEvent> {
   const body: Record<string, unknown> = {
     message,
     model: config.model,
     api_key: config.apiKey,
     base_url: config.baseUrl,
-    mode,
   };
   if (databaseUrl) body.database_url = databaseUrl;
   if (history && history.length > 0) body.history = history;
@@ -317,4 +315,94 @@ export async function activateDBProfile(id: string): Promise<void> {
     method: "PUT",
     headers: authHeaders(),
   }).catch(logApiError);
+}
+
+// ─── 报告管理 API ───
+
+export interface Report {
+  id: string;
+  title: string;
+  filename: string;
+  summary: string;
+  tags: string[];
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ReportDetail extends Report {
+  content: string;
+}
+
+export interface ReportListResponse {
+  items: Report[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export async function fetchReports(
+  page: number = 1,
+  pageSize: number = 20,
+  search?: string,
+  tags?: string[],
+): Promise<ReportListResponse> {
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+  });
+  if (search) params.set("search", search);
+  if (tags?.length) params.set("tags", tags.join(","));
+
+  const response = await fetch(`${API_BASE}/api/reports?${params}`);
+  if (!response.ok) throw new Error("获取报告列表失败");
+  return response.json();
+}
+
+export async function fetchReport(id: string): Promise<ReportDetail> {
+  const response = await fetch(`${API_BASE}/api/reports/${id}`);
+  if (!response.ok) throw new Error("获取报告详情失败");
+  return response.json();
+}
+
+export async function createReport(data: {
+  title: string;
+  content: string;
+  tags?: string[];
+}): Promise<Report> {
+  const response = await fetch(`${API_BASE}/api/reports`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error("创建报告失败");
+  return response.json();
+}
+
+export async function updateReport(
+  id: string,
+  data: {
+    title?: string;
+    content?: string;
+    tags?: string[];
+  },
+): Promise<Report> {
+  const response = await fetch(`${API_BASE}/api/reports/${id}`, {
+    method: "PUT",
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error("更新报告失败");
+  return response.json();
+}
+
+export async function deleteReport(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/reports/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!response.ok) throw new Error("删除报告失败");
+}
+
+export function getReportExportUrl(id: string, format: "pdf" | "excel" | "csv"): string {
+  return `${API_BASE}/api/reports/${id}/export/${format}`;
 }
