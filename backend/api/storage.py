@@ -87,8 +87,8 @@ def get_conversation(conv_id: str):
 
 @router.post("/api/conversations", status_code=201)
 def create_conversation(body: ConversationCreate):
-    try:
-        with get_app_session() as session:
+    with get_app_session() as session:
+        try:
             row = ConversationRow(
                 id=body.id,
                 title=body.title,
@@ -99,10 +99,10 @@ def create_conversation(body: ConversationCreate):
             session.add(row)
             session.commit()
             return {"id": row.id}
-    except SQLAlchemyError as e:
-        logger.error("Failed to create conversation: %s", e)
-        session.rollback()
-        raise HTTPException(500, "创建对话失败") from e
+        except SQLAlchemyError as e:
+            logger.error("Failed to create conversation: %s", e)
+            session.rollback()
+            raise HTTPException(500, "创建对话失败") from e
 
 
 @router.put("/api/conversations/{conv_id}")
@@ -160,18 +160,18 @@ def list_llm_profiles():
 
 @router.post("/api/connections/llm", status_code=201)
 def create_llm_profile(body: ProfileCreate):
-    try:
-        with get_app_session() as session:
+    with get_app_session() as session:
+        try:
             if body.is_active:
                 session.query(LLMProfileRow).update({"is_active": False})
             row = LLMProfileRow(id=body.id, name=body.name, config=body.config, is_active=body.is_active, created_at=body.created_at)
             session.add(row)
             session.commit()
             return {"id": row.id}
-    except SQLAlchemyError as e:
-        logger.error("Failed to create LLM profile: %s", e)
-        session.rollback()
-        raise HTTPException(500, "创建 LLM 配置失败") from e
+        except SQLAlchemyError as e:
+            logger.error("Failed to create LLM profile: %s", e)
+            session.rollback()
+            raise HTTPException(500, "创建 LLM 配置失败") from e
 
 
 @router.put("/api/connections/llm/{profile_id}")
@@ -246,18 +246,18 @@ def list_db_profiles():
 
 @router.post("/api/connections/db", status_code=201)
 def create_db_profile(body: ProfileCreate):
-    try:
-        with get_app_session() as session:
+    with get_app_session() as session:
+        try:
             if body.is_active:
                 session.query(DBProfileRow).update({"is_active": False})
             row = DBProfileRow(id=body.id, name=body.name, config=body.config, is_active=body.is_active, created_at=body.created_at)
             session.add(row)
             session.commit()
             return {"id": row.id}
-    except SQLAlchemyError as e:
-        logger.error("Failed to create DB profile: %s", e)
-        session.rollback()
-        raise HTTPException(500, "创建数据库配置失败") from e
+        except SQLAlchemyError as e:
+            logger.error("Failed to create DB profile: %s", e)
+            session.rollback()
+            raise HTTPException(500, "创建数据库配置失败") from e
 
 
 @router.put("/api/connections/db/{profile_id}")

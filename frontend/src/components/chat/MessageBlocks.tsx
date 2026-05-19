@@ -1,6 +1,7 @@
 "use client";
 
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import EChart from "@/components/chart/EChart";
 import type { EChartsOption } from "echarts";
 import type { ResponseBlock } from "@/lib/messages";
@@ -34,24 +35,39 @@ function DataTable({ block }: { block: Extract<ResponseBlock, { type: "table" }>
 
 function ToolBlock({ block }: { block: Extract<ResponseBlock, { type: "tool" }> }) {
   const done = block.status === "done";
+  const inputStr = block.input
+    ? (typeof block.input === "object" ? JSON.stringify(block.input, null, 2) : String(block.input))
+    : "";
   return (
-    <details className="rounded-md border border-[--border] bg-[--muted]/50 px-3 py-2 text-[12px] text-[--muted-foreground]">
+    <details open className="rounded-md border border-[--border] bg-[--muted]/50 px-3 py-2 text-[12px] text-[--muted-foreground]">
       <summary className="flex cursor-pointer list-none items-center gap-2">
         {done ? <CheckCircle2 size={14} className="text-[--success]" /> : <Wrench size={14} />}
         <span className="font-mono text-[--foreground]">{block.name}</span>
         <span className="ml-auto">{done ? "完成" : "运行中"}</span>
       </summary>
-      {(block.input || block.outputPreview) && (
-        <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-[--card] p-2 text-[11px] leading-relaxed">
-          {block.outputPreview || (typeof block.input === "object" ? JSON.stringify(block.input, null, 2) : String(block.input ?? ""))}
-        </pre>
-      )}
+        <>
+          {inputStr && (
+            <div className="mt-2">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-[--muted-foreground]/60 mb-1">输入参数</div>
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-[--card] p-2 text-[11px] leading-relaxed">{inputStr}</pre>
+            </div>
+          )}
+          {block.outputPreview && (
+            <div className={inputStr ? "mt-2" : "mt-2"}>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-[--muted-foreground]/60 mb-1">输出结果</div>
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-[--card] p-2 text-[11px] leading-relaxed">{block.outputPreview}</pre>
+            </div>
+          )}
+          {!inputStr && !block.outputPreview && (
+            <div className="mt-2 text-[11px] text-[--muted-foreground]/50 italic">等待中...</div>
+          )}
+        </>
     </details>
   );
 }
 
 export function MessageBlocks({ blocks }: { blocks: ResponseBlock[] }) {
-  const visibleBlocks = blocks.filter((block) => block.type !== "agent_status");
+  const visibleBlocks = blocks.filter((block) => block.type !== "agent_status" && block.type !== "thinking");
 
   return (
     <div className="space-y-3">
@@ -59,7 +75,7 @@ export function MessageBlocks({ blocks }: { blocks: ResponseBlock[] }) {
         if (block.type === "markdown") {
           return (
             <div key={block.id} className="prose-chat">
-              <ReactMarkdown>{block.content}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.content}</ReactMarkdown>
             </div>
           );
         }

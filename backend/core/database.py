@@ -3,6 +3,7 @@ import os
 import logging
 import threading
 from contextvars import ContextVar, Token
+from typing import Any
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session
 import pandas as pd
@@ -11,7 +12,7 @@ from core.models import Base
 
 logger = logging.getLogger(__name__)
 
-_engine_cache: dict[str, any] = {}
+_engine_cache: dict[str, Any] = {}
 _engine_lock = threading.Lock()
 
 # Per-request database URL override (set by API layer)
@@ -52,6 +53,10 @@ def init_app_db():
 def get_app_session() -> Session:
     """获取应用内部数据库 session"""
     return Session(get_app_engine())
+
+
+def get_current_db_url() -> str | None:
+    return _current_db_url.get()
 
 
 def set_current_db_url(url: str | None) -> Token[str | None]:

@@ -1,4 +1,5 @@
 """报告生成工具：Markdown 报告撰写与导出"""
+import os
 import re
 from agents import function_tool
 from pathlib import Path
@@ -13,7 +14,7 @@ def generate_report(title: str, content: str, format: str = "markdown") -> str:
     if format not in ("markdown",):
         return f"错误: 不支持的格式 '{format}'，目前仅支持 markdown。"
 
-    reports_dir = Path("reports")
+    reports_dir = Path(os.path.join(os.path.dirname(os.path.dirname(__file__)), "reports"))
     reports_dir.mkdir(exist_ok=True)
 
     # Sanitize title: only allow alphanumeric, Chinese, hyphens, underscores

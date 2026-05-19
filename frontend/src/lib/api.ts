@@ -48,6 +48,7 @@ export async function* streamChat(
     model: config.model,
     api_key: config.apiKey,
     base_url: config.baseUrl,
+    thinking_mode: config.thinking_mode,
   };
   if (databaseUrl) body.database_url = databaseUrl;
   if (history && history.length > 0) body.history = history;
@@ -87,6 +88,9 @@ export async function* streamChat(
           try {
             const event = JSON.parse(dataLines.join("\n")) as ChatEvent;
             yield event;
+            // Yield to macrotask queue so React can flush each event separately
+            // (prevents automatic batching from lumping text into one chunk)
+            await new Promise<void>((r) => setTimeout(r, 0));
           } catch {
             // skip malformed JSON
           }

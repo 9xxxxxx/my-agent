@@ -7,35 +7,32 @@ import { streamChat } from "@/lib/api";
 import MessageBubble from "./MessageBubble";
 import InputBar from "./InputBar";
 import { toast } from "sonner";
-import { createAssistantMessage, messageToPlainText } from "@/lib/messages";
+import { createAssistantMessage, messageToPlainText, messageReasoning } from "@/lib/messages";
 
 export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
   const messages = useChatStore((s) => {
     const conv = s.conversations.find((c) => c.id === s.activeId);
     return conv?.messages || [];
   });
-  const isLoading = useChatStore((s) => s.isLoading);
-  const currentTool = useChatStore((s) => s.currentTool);
-  const addMessage = useChatStore((s) => s.addMessage);
-  const appendToLastAssistant = useChatStore((s) => s.appendToLastAssistant);
-  const appendToLastReasoning = useChatStore((s) => s.appendToLastReasoning);
-  const addToolCall = useChatStore((s) => s.addToolCall);
-  const setLastToolOutput = useChatStore((s) => s.setLastToolOutput);
-  const setLastChart = useChatStore((s) => s.setLastChart);
-  const removeLastAssistant = useChatStore((s) => s.removeLastAssistant);
+  const isLoading = useChatStore((s) => {
+    const conv = s.conversations.find((c) => c.id === s.activeId);
+    return conv?.isLoading ?? false;
+  });
+  const currentTool = useChatStore((s) => {
+    const conv = s.conversations.find((c) => c.id === s.activeId);
+    return conv?.currentTool ?? null;
+  });
+  const currentAgent = useChatStore((s) => {
+    const conv = s.conversations.find((c) => c.id === s.activeId);
+    return conv?.currentAgent ?? null;
+  });
   const truncateFromIndex = useChatStore((s) => s.truncateFromIndex);
-  const flushConversation = useChatStore((s) => s.flushConversation);
-  const setLoading = useChatStore((s) => s.setLoading);
-  const setCurrentTool = useChatStore((s) => s.setCurrentTool);
-  const currentAgent = useChatStore((s) => s.currentAgent);
-  const setCurrentAgent = useChatStore((s) => s.setCurrentAgent);
   const getActiveLLM = useConnectionStore((s) => s.getActiveLLM);
   const getActiveDB = useConnectionStore((s) => s.getActiveDB);
   const assembleDbUrl = useConnectionStore((s) => s.assembleDbUrl);
   const fontSize = useConnectionStore((s) => s.fontSize);
-  const mode = useConnectionStore((s) => s.mode);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const abortMapRef = useRef<Map<string, AbortController>>(new Map());
   const [editContent, setEditContent] = useState<string | null>(null);
 
   useEffect(() => {
@@ -48,15 +45,19 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
     }
   }, [messages]);
 
-  // Abort stream on unmount
+  // Abort all streams on unmount
   useEffect(() => {
     return () => {
-      abortRef.current?.abort();
+      abortMapRef.current.forEach((controller) => controller.abort());
+      abortMapRef.current.clear();
     };
   }, []);
 
   const handleStop = useCallback(() => {
-    abortRef.current?.abort();
+    const activeId = useChatStore.getState().activeId;
+    if (activeId) {
+      abortMapRef.current.get(activeId)?.abort();
+    }
   }, []);
 
   const handleEdit = useCallback((content: string) => {
@@ -79,106 +80,134 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
         return;
       }
 
-      const currentMessages = useChatStore.getState().getMessages();
+      // Capture conversation ID at send time to scope all streaming writes
+      const convId = useChatStore.getState().activeId;
+      if (!convId) return;
+
+      const store = useChatStore.getState();
+
+      const currentMessages = store.conversations.find((c) => c.id === convId)?.messages || [];
       const history = currentMessages
         .filter((m) => m.role === "user" || m.role === "assistant")
         .map((m) => ({
           role: m.role,
           content: messageToPlainText(m),
-          reasoning: m.reasoning,
+          reasoning: m.reasoning || messageReasoning(m),
           toolCalls: m.toolCalls,
         }));
 
+      // Abort any existing stream for this conversation
+      abortMapRef.current.get(convId)?.abort();
+
       // Add user message AFTER building history to avoid sending it twice
-      addMessage({
+      store.addMessageTo(convId, {
         id: crypto.randomUUID(),
         role: "user",
         content: message,
         timestamp: Date.now(),
       });
-      addMessage(createAssistantMessage(crypto.randomUUID()));
-      setLoading(true);
-      setCurrentTool(null);
-      setCurrentAgent(null);
+      store.addMessageTo(convId, createAssistantMessage(crypto.randomUUID()));
+      store.setLoadingOf(convId, true);
+      store.setCurrentToolOf(convId, null);
+      store.setCurrentAgentOf(convId, null);
 
-      abortRef.current = new AbortController();
+      const controller = new AbortController();
+      abortMapRef.current.set(convId, controller);
       const dbProfile = getActiveDB() ?? undefined;
       const dbUrl = assembleDbUrl(dbProfile);
 
       try {
-        for await (const event of streamChat(message, llm.config, abortRef.current.signal, dbUrl || undefined, history, mode)) {
+        for await (const event of streamChat(message, llm.config, controller.signal, dbUrl || undefined, history)) {
+          // Re-read store state each iteration for conversation-scoped mutators
+          const s = useChatStore.getState();
           switch (event.type) {
             case "text_delta":
-              appendToLastAssistant(event.content || "");
+              s.appendToAssistantOf(convId, event.content || "");
               break;
             case "reasoning_delta":
-              appendToLastReasoning(event.content || "");
+              s.appendToReasoningOf(convId, event.content || "");
               break;
             case "tool_call":
               if (event.tool) {
-                addToolCall({ name: event.tool, arguments: event.arguments });
-                setCurrentTool(event.tool);
+                s.addToolCallTo(convId, { name: event.tool, arguments: event.arguments });
+                s.setCurrentToolOf(convId, event.tool);
               }
               break;
             case "tool_result":
-              setLastToolOutput(event.call_id, event.content || "");
-              setCurrentTool(null);
+              s.setToolOutputOf(convId, event.call_id, event.content || "");
+              s.setCurrentToolOf(convId, null);
               break;
             case "chart":
               try {
-                setLastChart(JSON.parse(event.content || "{}"));
+                s.setChartOf(convId, JSON.parse(event.content || "{}"));
               } catch {}
               break;
             case "agent_change":
               if (event.display_name) {
-                setCurrentAgent(event.display_name);
+                s.setCurrentAgentOf(convId, event.display_name);
+              }
+              break;
+            case "agent_status":
+              s.applyEventToAssistantOf(convId, event);
+              if (event.display_name) {
+                s.setCurrentAgentOf(convId, event.display_name);
               }
               break;
             case "handoff":
               if (event.target_display) {
-                // 添加系统消息显示 Agent 切换
-                addMessage({
+                s.addMessageTo(convId, {
                   id: crypto.randomUUID(),
                   role: "system",
                   content: `切换至 ${event.target_display}`,
                   timestamp: Date.now(),
                 });
-                setCurrentAgent(event.target_display);
+                s.setCurrentAgentOf(convId, event.target_display);
               }
               break;
             case "error":
               toast.error(event.content || "发生错误");
+              s.applyEventToAssistantOf(convId, {
+                type: "error",
+                code: event.code ?? "UNKNOWN_ERROR",
+                message: event.message ?? event.content ?? "发生错误",
+                recoverable: event.recoverable ?? true,
+              });
+              break;
+            case "done":
+              s.applyEventToAssistantOf(convId, event);
               break;
           }
         }
       } catch (err: unknown) {
         if (err instanceof Error && err.name !== "AbortError") {
           toast.error(err.message);
-          appendToLastAssistant(`\n\n**错误**: ${err.message}`);
+          useChatStore.getState().appendToAssistantOf(convId, `\n\n**错误**: ${err.message}`);
         }
       } finally {
-        setLoading(false);
-        setCurrentTool(null);
-        abortRef.current = null;
-        flushConversation();
+        const s = useChatStore.getState();
+        s.setLoadingOf(convId, false);
+        s.setCurrentToolOf(convId, null);
+        abortMapRef.current.delete(convId);
+        s.flushConversation();
       }
     },
-    [getActiveLLM, getActiveDB, assembleDbUrl, addMessage, appendToLastAssistant, appendToLastReasoning, addToolCall, setLastToolOutput, setLastChart, setLoading, setCurrentTool, setCurrentAgent, flushConversation, mode],
+    [getActiveLLM, getActiveDB, assembleDbUrl],
   );
 
   const handleRetry = useCallback(() => {
     const state = useChatStore.getState();
-    const conv = state.conversations.find((c) => c.id === state.activeId);
+    const convId = state.activeId;
+    if (!convId) return;
+    const conv = state.conversations.find((c) => c.id === convId);
     const msgs = conv?.messages || [];
     const lastUser = [...msgs].reverse().find((m) => m.role === "user");
     if (!lastUser) return;
-    removeLastAssistant();
-    // handleSend reads from useChatStore.getState(), so no setTimeout needed
+    state.removeLastAssistantOf(convId);
     void handleSend(messageToPlainText(lastUser));
-  }, [handleSend, removeLastAssistant]);
+  }, [handleSend]);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="relative flex-1 flex flex-col overflow-hidden">
       <div ref={scrollRef} className="flex-1 overflow-y-auto transition-opacity duration-200">
         {!mounted || messages.length === 0 ? (
           /* Empty state — centered welcome with input (ChatGPT style) */
@@ -248,7 +277,7 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
           </div>
         ) : (
           /* Message list */
-          <div className="max-w-[1000px] mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4" style={{ "--chat-font-size": `${fontSize}px` } as React.CSSProperties}>
+          <div className="max-w-[1000px] mx-auto px-4 sm:px-6 pt-4 sm:pt-6 pb-24 space-y-4" style={{ "--chat-font-size": `${fontSize}px` } as React.CSSProperties}>
             {messages.map((msg, i) => {
               // 跳过空的 assistant 消息（流式传输尚未到达），避免与 loading 指示器重复
               if (msg.role === "assistant" && !msg.content && isLoading && i === messages.length - 1) {
@@ -307,28 +336,20 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
         )}
       </div>
 
-      {/* Input bar with stop button — hidden during welcome state */}
-      {messages.length > 0 && (
-        <div className="shrink-0 border-t border-[--border] safe-area-bottom">
-          <div className="max-w-[1000px] mx-auto px-3 sm:px-4 py-3 sm:py-4">
-            {isLoading ? (
-              <button
-                onClick={handleStop}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-[--border] hover:bg-[--muted] text-[13px] text-[--muted-foreground] hover:text-[--foreground] transition-colors cursor-pointer"
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="6" y="6" width="12" height="12" rx="2" />
-                </svg>
-                停止生成
-              </button>
-            ) : (
+      {/* Floating input bar — overlaid on content */}
+      {mounted && messages.length > 0 && (
+        <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
+          <div className="max-w-[1000px] mx-auto px-4 sm:px-6 pb-4 sm:pb-5">
+            <div className="pointer-events-auto">
               <InputBar
                 key={editContent ?? "composer"}
                 onSend={(msg) => { setEditContent(null); handleSend(msg); }}
                 disabled={false}
                 defaultValue={editContent}
+                isLoading={isLoading}
+                onStop={handleStop}
               />
-            )}
+            </div>
           </div>
         </div>
       )}

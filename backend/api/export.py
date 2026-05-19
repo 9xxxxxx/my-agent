@@ -1,4 +1,5 @@
 """报告/数据导出端点"""
+import os
 import tempfile
 from pathlib import Path
 from pydantic import BaseModel
@@ -9,6 +10,9 @@ from core.pdf_generator import PDFGenerator
 from core.report_service import ReportService
 from core.data_exporter import DataExporter
 from core.database import run_query_to_dataframe
+from core.sql_safety import is_select_only
+
+_REPORTS_DIR = Path(os.path.join(os.path.dirname(os.path.dirname(__file__)), "reports"))
 
 router = APIRouter()
 
@@ -26,7 +30,7 @@ class ExportQueryRequest(BaseModel):
 async def export_report(filename: str):
     """下载已生成的报告文件"""
     try:
-        filepath = safe_child_path(Path("reports"), filename)
+        filepath = safe_child_path(_REPORTS_DIR, filename)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not filepath.exists():
@@ -68,6 +72,9 @@ async def export_report_pdf(report_id: str):
 @router.post("/api/export/query/excel")
 async def export_query_excel(request: ExportQueryRequest):
     """将查询结果导出为 Excel"""
+    ok, err = is_select_only(request.sql)
+    if not ok:
+        raise HTTPException(status_code=400, detail=f"仅允许 SELECT 查询: {err}")
     try:
         df = run_query_to_dataframe(request.sql, request.database or None)
     except Exception as e:
@@ -92,6 +99,9 @@ async def export_query_excel(request: ExportQueryRequest):
 @router.post("/api/export/query/csv")
 async def export_query_csv(request: ExportQueryRequest):
     """将查询结果导出为 CSV"""
+    ok, err = is_select_only(request.sql)
+    if not ok:
+        raise HTTPException(status_code=400, detail=f"仅允许 SELECT 查询: {err}")
     try:
         df = run_query_to_dataframe(request.sql, request.database or None)
     except Exception as e:

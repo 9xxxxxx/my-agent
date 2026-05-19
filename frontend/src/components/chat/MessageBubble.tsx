@@ -1,16 +1,46 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { Check, Copy, RotateCcw, SquarePen } from "lucide-react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { Check, Copy, RotateCcw, SquarePen, Sparkles } from "lucide-react";
 import type { Message } from "@/stores/chat";
-import { messageToPlainText } from "@/lib/messages";
+import { messageToPlainText, type ThinkingStep } from "@/lib/messages";
 import { MessageBlocks } from "@/components/chat/MessageBlocks";
+import { CheckCircle2, Wrench, Brain } from "lucide-react";
 import { toast } from "sonner";
+
+/** Mask password in database connection URLs like postgresql+psycopg2://user:***@host:port/db */
+function maskDbUrl(str: string): string {
+  return str.replace(/((?:postgresql|mysql|sqlite|duckdb)\+\w+:\/\/[^:]*:)([^@]+)(@)/g, "$1***$3");
+}
+
+/** Format tool arguments for display: parse JSON, mask passwords, pretty-print */
+function formatToolArgs(input: unknown): string {
+  if (!input) return "";
+  let obj: Record<string, unknown>;
+  if (typeof input === "object") {
+    obj = input as Record<string, unknown>;
+  } else {
+    try { obj = JSON.parse(String(input)); } catch { return String(input); }
+  }
+  // Mask database_url password
+  if (typeof obj.database_url === "string" && obj.database_url) {
+    obj = { ...obj, database_url: maskDbUrl(obj.database_url) };
+  }
+  return JSON.stringify(obj, null, 2);
+}
 
 interface Props {
   message: Message;
   onRetry?: () => void;
   onEdit?: (content: string) => void;
+}
+
+/** Format thinking duration in seconds */
+function formatDuration(startedAt?: number, completedAt?: number): string | null {
+  if (!startedAt) return null;
+  const end = completedAt ?? Date.now();
+  const seconds = ((end - startedAt) / 1000).toFixed(1);
+  return `${seconds} 秒`;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -62,7 +92,7 @@ export default function MessageBubble({ message, onRetry, onEdit }: Props) {
     return (
       <div className="group flex justify-end py-2">
         <div className="max-w-[86%] sm:max-w-[72%]">
-          <div className="rounded-2xl rounded-br-md bg-[--muted] px-4 py-3 text-[15px] leading-7 text-[--foreground]">
+          <div className="rounded-2xl rounded-br-md bg-[--muted] px-4 py-3 text-[15px] leading-7 text-[--foreground] shadow-sm border border-[--border]">
             <p className="whitespace-pre-wrap">{text}</p>
           </div>
           <div className="mt-1 flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
@@ -83,11 +113,112 @@ export default function MessageBubble({ message, onRetry, onEdit }: Props) {
     );
   }
 
+  const thinkingBlocks = message.blocks.filter((b): b is Extract<typeof b, { type: "thinking" }> => b.type === "thinking");
+
+  // Merge all thinking blocks + standalone tool blocks into one flat step list
+  const toolBlocks = useMemo(
+    () => message.blocks.filter((b): b is Extract<typeof b, { type: "tool" }> => b.type === "tool"),
+    [message.blocks],
+  );
+  const allThinkingSteps = useMemo(() => {
+    const steps: ThinkingStep[] = [...thinkingBlocks.flatMap((b) => b.steps)];
+    // Append standalone tool blocks that aren't already inside a thinking block
+    for (const tb of toolBlocks) {
+      if (!steps.some((s) => s.type === "tool" && s.name === tb.name && s.input === tb.input)) {
+        steps.push({ type: "tool", name: tb.name, status: tb.status, input: tb.input, outputPreview: tb.outputPreview });
+      }
+    }
+    return steps;
+  }, [thinkingBlocks, toolBlocks]);
+
+  const earliestStart = thinkingBlocks.find((b) => b.startedAt)?.startedAt;
+  const latestCompleted = [...thinkingBlocks].reverse().find((b) => b.completedAt)?.completedAt;
+
+  // Live-updating timer while thinking is in progress
+  const [tick, setTick] = useState(0);
+  const isThinking = thinkingBlocks.some((b) => b.startedAt && !b.completedAt && b.steps.length > 0);
+  useEffect(() => {
+    if (!isThinking) return;
+    const id = setInterval(() => setTick((t) => t + 1), 200);
+    return () => clearInterval(id);
+  }, [isThinking]);
+
+  // Blocks to pass to MessageBlocks (exclude standalone tool blocks, they're inside thinking now)
+  const contentBlocks = useMemo(
+    () => message.blocks.filter((b) => b.type !== "tool"),
+    [message.blocks],
+  );
+
+  const durationStr = formatDuration(earliestStart, latestCompleted);
+
   return (
-    <div className="group flex justify-start py-3">
-      <div className="max-w-[min(820px,100%)] flex-1">
+    <div className="group flex justify-start gap-2.5 py-3">
+      {/* Assistant avatar */}
+      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[--primary]/10 text-[--primary]">
+        <Sparkles size={14} />
+      </div>
+      <div className="max-w-[min(820px,100%)] flex-1 min-w-0">
+        {allThinkingSteps.length > 0 && (
+          <details open className="mb-3 rounded-lg bg-[--primary]/[0.03] px-3.5 py-2.5 text-[12px]">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 select-none">
+              <Brain size={13} className="shrink-0 text-[--primary]/60" />
+              <span className="text-[12px] font-medium text-[--primary]/70">思考过程</span>
+              {durationStr && (
+                <span className="text-[11px] font-normal text-[--muted-foreground]">(用时 {durationStr})</span>
+              )}
+              <svg className="shrink-0 text-[--muted-foreground]/50" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+            </summary>
+            <div className="mt-2.5 space-y-2 border-l-2 border-[--primary]/10 pl-3">
+              {allThinkingSteps.map((step, i) => {
+                if (step.type === "reasoning") {
+                  return (
+                    <div key={i} className="whitespace-pre-wrap leading-relaxed text-[12px] text-[--muted-foreground] italic">{step.content}</div>
+                  );
+                }
+                // tool step
+                const toolDone = step.status === "done";
+                const inputStr = formatToolArgs(step.input);
+                return (
+                  <details key={i} className="border-t border-[--border]/40 pt-1.5">
+                    <summary className="flex cursor-pointer list-none items-center gap-1.5 select-none">
+                      {toolDone ? <CheckCircle2 size={12} className="text-[--success] shrink-0" /> : <Wrench size={12} className="shrink-0" />}
+                      <span className="font-mono text-[--foreground]">{step.name}</span>
+                      <svg className="shrink-0 text-[--muted-foreground]/50" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+                      <span className="ml-auto text-[10px]">{toolDone ? "完成" : "运行中"}</span>
+                    </summary>
+                    {inputStr && (
+                      <div className="mt-1.5">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-[--muted-foreground]/50 mb-0.5">输入</div>
+                        <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded bg-[--muted] p-1.5 text-[10px] leading-relaxed">{inputStr}</pre>
+                      </div>
+                    )}
+                    {step.outputPreview && (
+                      <div className="mt-1.5">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-[--muted-foreground]/50 mb-0.5">输出</div>
+                        <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded bg-[--muted] p-1.5 text-[10px] leading-relaxed">{step.outputPreview}</pre>
+                      </div>
+                    )}
+                  </details>
+                );
+              })}
+            </div>
+          </details>
+        )}
+        {/* Fallback for legacy messages with reasoning field but no thinking blocks */}
+        {!allThinkingSteps.length && message.reasoning && (
+          <details open className="mb-3 rounded-lg bg-[--primary]/[0.03] px-3.5 py-2.5 text-[12px]">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 select-none">
+              <Brain size={13} className="shrink-0 text-[--primary]/60" />
+              <span className="text-[12px] font-medium text-[--primary]/70">思考过程</span>
+              <svg className="shrink-0 text-[--muted-foreground]/50" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+            </summary>
+            <div className="mt-2.5 border-l-2 border-[--primary]/10 pl-3">
+              <div className="whitespace-pre-wrap leading-relaxed text-[12px] text-[--muted-foreground] italic">{message.reasoning}</div>
+            </div>
+          </details>
+        )}
         <div className="px-1 text-[--foreground]">
-          <MessageBlocks blocks={message.blocks} />
+          <MessageBlocks blocks={contentBlocks} />
         </div>
         <div className="mt-2 flex items-center gap-1">
           {text && <CopyButton text={text} />}

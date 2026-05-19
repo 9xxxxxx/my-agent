@@ -14,7 +14,7 @@ describe("message migration", () => {
     });
 
     expect(migrated.blocks.map((block) => block.type)).toEqual([
-      "tool",
+      "thinking",
       "markdown",
       "chart",
     ]);

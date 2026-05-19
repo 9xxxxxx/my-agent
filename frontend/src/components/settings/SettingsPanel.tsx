@@ -112,9 +112,6 @@ export default function SettingsPanel({ onClose }: { onClose?: () => void }) {
   const setEditingDB = useConnectionStore((s) => s.setEditingDB);
   const assembleDbUrl = useConnectionStore((s) => s.assembleDbUrl);
 
-  const mode = useConnectionStore((s) => s.mode);
-  const setMode = useConnectionStore((s) => s.setMode);
-
   const llmProfile = llmProfiles.find((p) => p.id === editingLLMId) || llmProfiles[0];
   const dbProfile = dbProfiles.find((p) => p.id === editingDBId) || dbProfiles[0];
 
@@ -174,7 +171,7 @@ export default function SettingsPanel({ onClose }: { onClose?: () => void }) {
       {/* ─── Tab content ─── */}
       <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-4 sm:py-5">
         {activeTab === "general" ? (
-          <GeneralPanel mode={mode} onModeChange={setMode} />
+          <GeneralPanel />
         ) : activeTab === "llm" ? (
           <LLMPanel
             profiles={llmProfiles}
@@ -219,43 +216,9 @@ export default function SettingsPanel({ onClose }: { onClose?: () => void }) {
 }
 
 // ─── General Panel ───
-function GeneralPanel({ mode, onModeChange }: { mode: "dev" | "prod"; onModeChange: (m: "dev" | "prod") => void }) {
+function GeneralPanel() {
   return (
     <div className="space-y-6">
-      {/* Environment mode */}
-      <section>
-        <label className={labelCls}>运行环境</label>
-        <p className="text-[12px] text-[--muted-foreground] mt-1 mb-3">开发模式显示 Agent 调试信息（工具调用、推理过程等），生产模式只显示最终回复。</p>
-        <div className="grid grid-cols-2 gap-2" role="radiogroup">
-          {([
-            { value: "prod" as const, label: "生产模式", desc: "简洁输出，隐藏内部细节", color: "#10b981" },
-            { value: "dev" as const, label: "开发模式", desc: "显示工具调用、推理过程", color: "#3b82f6" },
-          ]).map((opt) => {
-            const sel = mode === opt.value;
-            return (
-              <button
-                key={opt.value}
-                onClick={() => onModeChange(opt.value)}
-                role="radio"
-                aria-checked={sel}
-                className={`flex items-start gap-3 p-3 rounded-lg border transition-all duration-150 cursor-pointer text-left ${
-                  sel ? "border-[--primary] bg-[--primary]/[0.03]" : "border-transparent bg-[--muted] hover:bg-[--border]"
-                }`}
-              >
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-bold text-white shrink-0 transition-transform duration-150 ${sel ? "scale-105" : ""}`}
-                  style={{ background: opt.color }}>
-                  {opt.label[0]}
-                </div>
-                <div>
-                  <div className={`text-[13px] font-medium ${sel ? "text-[--foreground]" : "text-[--muted-foreground]"}`}>{opt.label}</div>
-                  <div className="text-[11px] text-[--muted-foreground] mt-0.5">{opt.desc}</div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
       {/* Keyboard shortcuts */}
       <section className="bg-[--muted] rounded-lg p-4">
         <h3 className="text-[13px] font-semibold text-[--foreground] mb-3">快捷键</h3>
@@ -384,6 +347,23 @@ function LLMPanel({
             <div className="flex justify-between mt-1">
               <span className="text-[10px] text-[--muted-foreground]">精确 0</span>
               <span className="text-[10px] text-[--muted-foreground]">创意 2</span>
+            </div>
+          </section>
+          <section>
+            <label className={labelCls}>响应模式</label>
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              {(["thinking", "fast"] as const).map((mode) => {
+                const sel = (llm.thinking_mode || "thinking") === mode;
+                const label = mode === "thinking" ? "思考" : "快速";
+                const desc = mode === "thinking" ? "深度推理，展示思考过程" : "跳过思考，直接回答";
+                return (
+                  <button key={mode} onClick={() => onUpdate({ config: { ...llm, thinking_mode: mode } })}
+                    className={`flex flex-col items-center gap-1.5 py-3 rounded-lg border transition-all duration-150 cursor-pointer ${sel ? "border-[--primary] bg-[--primary]/[0.03]" : "border-transparent bg-[--muted] hover:bg-[--border]"}`}>
+                    <span className={`text-[13px] font-medium ${sel ? "text-[--foreground]" : "text-[--muted-foreground]"}`}>{label}</span>
+                    <span className={`text-[10px] ${sel ? "text-[--primary]" : "text-[--muted-foreground]"}`}>{desc}</span>
+                  </button>
+                );
+              })}
             </div>
           </section>
           <section className="bg-[--muted] rounded-lg p-4">

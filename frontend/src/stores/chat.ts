@@ -5,6 +5,7 @@ import {
   saveConversation,
   updateConversation,
   deleteConversationApi,
+  type ChatEvent,
 } from "@/lib/api";
 import {
   applyChatEvent,
@@ -36,6 +37,9 @@ export interface Conversation {
   messages: Message[];
   createdAt: number;
   updatedAt: number;
+  isLoading?: boolean;
+  currentTool?: string | null;
+  currentAgent?: string | null;
 }
 
 interface StoredConversation {
@@ -52,18 +56,17 @@ export interface LLMConfig {
   baseUrl: string;
   model: string;
   temperature: number;
+  thinking_mode: "thinking" | "fast";
 }
 
 interface ChatState {
   conversations: Conversation[];
   activeId: string | null;
-  isLoading: boolean;
-  currentTool: string | null;
-  currentAgent: string | null;
 
   createConversation: () => string;
   switchConversation: (id: string) => void;
   deleteConversation: (id: string) => void;
+  batchDeleteConversations: (ids: string[]) => void;
   renameConversation: (id: string, title: string) => void;
 
   getActive: () => Conversation | null;
@@ -75,6 +78,7 @@ interface ChatState {
   addToolCall: (tool: ToolCall) => void;
   setLastToolOutput: (callId: string | undefined, output: string) => void;
   setLastChart: (chart: Record<string, unknown>) => void;
+  applyEventToLastAssistant: (event: ChatEvent) => void;
   removeLastAssistant: () => void;
   truncateFromIndex: (index: number) => void;
   flushConversation: () => void;
@@ -82,6 +86,19 @@ interface ChatState {
   setLoading: (loading: boolean) => void;
   setCurrentTool: (tool: string | null) => void;
   setCurrentAgent: (agent: string | null) => void;
+
+  // Conversation-scoped mutators (target by ID, not activeId)
+  addMessageTo: (conversationId: string, msg: StoredMessage) => void;
+  appendToAssistantOf: (conversationId: string, delta: string) => void;
+  appendToReasoningOf: (conversationId: string, delta: string) => void;
+  addToolCallTo: (conversationId: string, tool: ToolCall) => void;
+  setToolOutputOf: (conversationId: string, callId: string | undefined, output: string) => void;
+  setChartOf: (conversationId: string, chart: Record<string, unknown>) => void;
+  applyEventToAssistantOf: (conversationId: string, event: ChatEvent) => void;
+  removeLastAssistantOf: (conversationId: string) => void;
+  setLoadingOf: (conversationId: string, loading: boolean) => void;
+  setCurrentToolOf: (conversationId: string, tool: string | null) => void;
+  setCurrentAgentOf: (conversationId: string, agent: string | null) => void;
 }
 
 const STORAGE_KEY = "chat-conversations";
@@ -214,6 +231,17 @@ function updateActiveConversation(
   });
 }
 
+function updateConversationById(
+  state: ChatState,
+  conversationId: string,
+  updater: (conversation: Conversation) => Conversation,
+): Conversation[] {
+  return state.conversations.map((conversation) => {
+    if (conversation.id !== conversationId) return conversation;
+    return updater(conversation);
+  });
+}
+
 function updateLastAssistantMessage(message: Message, updater: (message: Message) => Message): Message {
   if (message.role !== "assistant") return message;
   return updater(message);
@@ -226,9 +254,6 @@ const initialConversations = init.conversations.length > 0 ? init.conversations 
 export const useChatStore = create<ChatState>((set, get) => ({
   conversations: initialConversations,
   activeId: init.activeId || initialConv.id,
-  isLoading: false,
-  currentTool: null,
-  currentAgent: null,
 
   createConversation: () => {
     const conv = createNewConversation();
@@ -278,6 +303,36 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return { conversations, activeId };
     });
     void deleteConversationApi(id);
+  },
+
+  batchDeleteConversations: (ids) => {
+    const idSet = new Set(ids);
+    set((state) => {
+      const conversations = state.conversations.filter((c) => !idSet.has(c.id));
+      let activeId = state.activeId;
+
+      if (conversations.length === 0) {
+        const fallback = createNewConversation();
+        conversations.push(fallback);
+        activeId = fallback.id;
+        void saveConversation({
+          id: fallback.id,
+          title: fallback.title,
+          messages: fallback.messages,
+          created_at: fallback.createdAt,
+          updated_at: fallback.updatedAt,
+        });
+      } else if (activeId && idSet.has(activeId)) {
+        activeId = conversations[0].id;
+      }
+
+      saveConversations(conversations);
+      saveActiveId(activeId);
+      return { conversations, activeId };
+    });
+    for (const id of ids) {
+      void deleteConversationApi(id);
+    }
   },
 
   renameConversation: (id, title) => {
@@ -334,7 +389,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const messages = [...conversation.messages];
         const last = messages[messages.length - 1];
         if (last?.role === "assistant") {
-          messages[messages.length - 1] = { ...last, reasoning: `${last.reasoning || ""}${delta}` };
+          const updated = withLegacyFields(applyChatEvent(last, { type: "reasoning_delta", content: delta }), last);
+          messages[messages.length - 1] = updated;
         }
         return { ...conversation, messages, updatedAt: Date.now() };
       });
@@ -393,6 +449,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return { conversations };
     }),
 
+  applyEventToLastAssistant: (event) =>
+    set((state) => {
+      const conversations = updateActiveConversation(state, (conversation) => {
+        const messages = [...conversation.messages];
+        const last = messages[messages.length - 1];
+        if (last?.role === "assistant") {
+          messages[messages.length - 1] = withLegacyFields(applyChatEvent(last, event), last);
+        }
+        return { ...conversation, messages, updatedAt: Date.now() };
+      });
+      saveConversationsDebounced(conversations);
+      return { conversations };
+    }),
+
   removeLastAssistant: () =>
     set((state) => {
       const conversations = updateActiveConversation(state, (conversation) => {
@@ -430,9 +500,163 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  setLoading: (loading) => set({ isLoading: loading }),
-  setCurrentTool: (tool) => set({ currentTool: tool }),
-  setCurrentAgent: (agent) => set({ currentAgent: agent }),
+  setLoading: (loading) => set((state) => {
+    if (!state.activeId) return state;
+    const conversations = updateConversationById(state, state.activeId, (c) => ({ ...c, isLoading: loading }));
+    return { conversations };
+  }),
+  setCurrentTool: (tool) => set((state) => {
+    if (!state.activeId) return state;
+    const conversations = updateConversationById(state, state.activeId, (c) => ({ ...c, currentTool: tool }));
+    return { conversations };
+  }),
+  setCurrentAgent: (agent) => set((state) => {
+    if (!state.activeId) return state;
+    const conversations = updateConversationById(state, state.activeId, (c) => ({ ...c, currentAgent: agent }));
+    return { conversations };
+  }),
+
+  // Conversation-scoped mutators
+  addMessageTo: (conversationId, msg) =>
+    set((state) => {
+      const message = normalizeMessage(msg);
+      const conversations = updateConversationById(state, conversationId, (conversation) => {
+        const messages = [...conversation.messages, message];
+        const title = conversation.title === "新对话" ? deriveTitle(messages) : conversation.title;
+        const updatedAt = Date.now();
+        void updateConversation(conversation.id, { title, messages, updated_at: updatedAt });
+        return { ...conversation, messages, title, updatedAt };
+      });
+      saveConversations(conversations);
+      return { conversations };
+    }),
+
+  appendToAssistantOf: (conversationId, delta) =>
+    set((state) => {
+      const conversations = updateConversationById(state, conversationId, (conversation) => {
+        const messages = [...conversation.messages];
+        const last = messages[messages.length - 1];
+        if (last) {
+          const updated = withLegacyFields(applyChatEvent(last, { type: "text_delta", content: delta }), last);
+          messages[messages.length - 1] = updateLastAssistantMessage(last, () => updated);
+        }
+        return { ...conversation, messages, updatedAt: Date.now() };
+      });
+      saveConversationsDebounced(conversations);
+      return { conversations };
+    }),
+
+  appendToReasoningOf: (conversationId, delta) =>
+    set((state) => {
+      const conversations = updateConversationById(state, conversationId, (conversation) => {
+        const messages = [...conversation.messages];
+        const last = messages[messages.length - 1];
+        if (last?.role === "assistant") {
+          const updated = withLegacyFields(applyChatEvent(last, { type: "reasoning_delta", content: delta }), last);
+          messages[messages.length - 1] = updated;
+        }
+        return { ...conversation, messages, updatedAt: Date.now() };
+      });
+      saveConversationsDebounced(conversations);
+      return { conversations };
+    }),
+
+  addToolCallTo: (conversationId, tool) =>
+    set((state) => {
+      const conversations = updateConversationById(state, conversationId, (conversation) => {
+        const messages = [...conversation.messages];
+        const last = messages[messages.length - 1];
+        if (last?.role === "assistant") {
+          const toolCalls = [...(last.toolCalls || []), tool];
+          const updated = withLegacyFields(applyChatEvent(last, { type: "tool_call", tool: tool.name, arguments: tool.arguments }), { ...last, toolCalls });
+          messages[messages.length - 1] = { ...updated, toolCalls };
+        }
+        return { ...conversation, messages, updatedAt: Date.now() };
+      });
+      saveConversationsDebounced(conversations);
+      return { conversations };
+    }),
+
+  setToolOutputOf: (conversationId, _callId, output) =>
+    set((state) => {
+      const conversations = updateConversationById(state, conversationId, (conversation) => {
+        const messages = [...conversation.messages];
+        const last = messages[messages.length - 1];
+        if (last?.role === "assistant") {
+          const toolCalls = [...(last.toolCalls || [])];
+          const index = toolCalls.findLastIndex((tool) => !tool.output);
+          if (index >= 0) toolCalls[index] = { ...toolCalls[index], output };
+          const updated = withLegacyFields(applyChatEvent(last, { type: "tool_result", content: output }), { ...last, toolCalls });
+          messages[messages.length - 1] = { ...updated, toolCalls };
+        }
+        return { ...conversation, messages, updatedAt: Date.now() };
+      });
+      saveConversationsDebounced(conversations);
+      return { conversations };
+    }),
+
+  setChartOf: (conversationId, chart) =>
+    set((state) => {
+      const conversations = updateConversationById(state, conversationId, (conversation) => {
+        const messages = [...conversation.messages];
+        const last = messages[messages.length - 1];
+        if (last?.role === "assistant") {
+          messages[messages.length - 1] = withLegacyFields(
+            { ...last, blocks: [...last.blocks, { id: `${last.id}-chart-${last.blocks.length}`, type: "chart", option: chart }], updatedAt: Date.now() },
+            { ...last, chart },
+          );
+        }
+        return { ...conversation, messages, updatedAt: Date.now() };
+      });
+      saveConversationsDebounced(conversations);
+      return { conversations };
+    }),
+
+  applyEventToAssistantOf: (conversationId, event) =>
+    set((state) => {
+      const conversations = updateConversationById(state, conversationId, (conversation) => {
+        const messages = [...conversation.messages];
+        const last = messages[messages.length - 1];
+        if (last?.role === "assistant") {
+          messages[messages.length - 1] = withLegacyFields(applyChatEvent(last, event), last);
+        }
+        return { ...conversation, messages, updatedAt: Date.now() };
+      });
+      saveConversationsDebounced(conversations);
+      return { conversations };
+    }),
+
+  removeLastAssistantOf: (conversationId) =>
+    set((state) => {
+      const conversations = updateConversationById(state, conversationId, (conversation) => {
+        const messages = [...conversation.messages];
+        const last = messages[messages.length - 1];
+        if (last?.role === "assistant") messages.pop();
+        const updatedAt = Date.now();
+        void updateConversation(conversation.id, { messages, updated_at: updatedAt });
+        return { ...conversation, messages, updatedAt };
+      });
+      saveConversations(conversations);
+      return { conversations };
+    }),
+
+  setLoadingOf: (conversationId, loading) =>
+    set((state) => {
+      const conversations = updateConversationById(state, conversationId, (c) => ({ ...c, isLoading: loading }));
+      return { conversations };
+    }),
+
+  setCurrentToolOf: (conversationId, tool) =>
+    set((state) => {
+      const conversations = updateConversationById(state, conversationId, (c) => ({ ...c, currentTool: tool }));
+      return { conversations };
+    }),
+
+  setCurrentAgentOf: (conversationId, agent) =>
+    set((state) => {
+      const conversations = updateConversationById(state, conversationId, (c) => ({ ...c, currentAgent: agent }));
+      return { conversations };
+    }),
 }));
 
 if (typeof window !== "undefined") {

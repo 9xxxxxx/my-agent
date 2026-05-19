@@ -61,7 +61,6 @@ interface ConnectionState {
   editingLLMId: string | null;
   editingDBId: string | null;
   fontSize: number; // 14-22
-  mode: "dev" | "prod";
 
   // LLM CRUD
   createLLM: (name: string) => string;
@@ -79,7 +78,6 @@ interface ConnectionState {
 
   // UI
   setFontSize: (size: number) => void;
-  setMode: (mode: "dev" | "prod") => void;
 
   // Selectors
   getActiveLLM: () => LLMProfile | null;
@@ -95,7 +93,6 @@ const LLM_ACTIVE = "llm-active-id";
 const DB_KEY = "db-profiles";
 const DB_ACTIVE = "db-active-id";
 const FONT_SIZE_KEY = "chat-font-size";
-const MODE_KEY = "chat-mode";
 
 // ─── Defaults ───
 const defaultLLM: LLMConfig = {
@@ -104,6 +101,7 @@ const defaultLLM: LLMConfig = {
   baseUrl: "https://api.deepseek.com/v1",
   model: "deepseek-chat",
   temperature: 0,
+  thinking_mode: "thinking",
 };
 
 const defaultDB: ServerDBConfig = {
@@ -273,8 +271,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
   activeDBId: init.dbActive,
   editingLLMId: init.llmActive,
   editingDBId: init.dbActive,
-  fontSize: loadJSON(FONT_SIZE_KEY, 17),
-  mode: loadJSON(MODE_KEY, "prod"),
+  fontSize: loadJSON(FONT_SIZE_KEY, 16),
 
   // ── LLM ──
 
@@ -428,11 +425,6 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     const clamped = Math.max(14, Math.min(22, size));
     set({ fontSize: clamped });
     saveJSON(FONT_SIZE_KEY, clamped);
-  },
-
-  setMode: (mode) => {
-    set({ mode });
-    saveJSON(MODE_KEY, mode);
   },
 
   // ── Selectors ──

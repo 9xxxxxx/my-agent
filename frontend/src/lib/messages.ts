@@ -3,11 +3,16 @@ import type { ToolCall } from "@/stores/chat";
 
 export type MessageRole = "user" | "assistant" | "system";
 
+export type ThinkingStep =
+  | { type: "reasoning"; content: string }
+  | { type: "tool"; name: string; status: "running" | "done" | "error"; input?: unknown; outputPreview?: string };
+
 export type ResponseBlock =
   | { id: string; type: "markdown"; content: string }
   | { id: string; type: "chart"; option: Record<string, unknown>; title?: string }
   | { id: string; type: "table"; columns: string[]; rows: unknown[][]; title?: string }
   | { id: string; type: "tool"; name: string; status: "running" | "done" | "error"; input?: unknown; outputPreview?: string }
+  | { id: string; type: "thinking"; steps: ThinkingStep[]; startedAt?: number; completedAt?: number }
   | { id: string; type: "agent_status"; agent: string; label: string; status: "entered" | "running" | "done" }
   | { id: string; type: "error"; code: string; message: string; recoverable: boolean };
 
@@ -54,17 +59,24 @@ export function migrateMessage(message: LegacyMessage | BlockMessage): BlockMess
   const createdAt = legacy.timestamp ?? Date.now();
   const blocks: ResponseBlock[] = [];
 
-  if (legacy.toolCalls?.length) {
-    legacy.toolCalls.forEach((tool, index) => {
-      blocks.push({
-        id: blockId(message.id, `tool-${index}`),
-        type: "tool",
-        name: tool.name,
-        status: tool.output ? "done" : "running",
-        input: tool.arguments,
-        outputPreview: tool.output,
+  // Build thinking block from legacy tool calls + reasoning
+  if (legacy.toolCalls?.length || legacy.reasoning?.trim()) {
+    const steps: ThinkingStep[] = [];
+    if (legacy.reasoning?.trim()) {
+      steps.push({ type: "reasoning", content: legacy.reasoning });
+    }
+    if (legacy.toolCalls?.length) {
+      legacy.toolCalls.forEach((tool) => {
+        steps.push({
+          type: "tool",
+          name: tool.name,
+          status: tool.output ? "done" : "running",
+          input: tool.arguments,
+          outputPreview: tool.output,
+        });
       });
-    });
+    }
+    blocks.push({ id: blockId(message.id, "thinking-0"), type: "thinking", steps });
   }
 
   if (legacy.content?.trim()) {
@@ -90,6 +102,18 @@ export function messageToPlainText(message: BlockMessage): string {
     .join("\n\n");
 }
 
+export function messageReasoning(message: BlockMessage): string | undefined {
+  for (const block of message.blocks) {
+    if (block.type === "thinking") {
+      const parts = block.steps
+        .filter((s): s is Extract<ThinkingStep, { type: "reasoning" }> => s.type === "reasoning")
+        .map((s) => s.content);
+      if (parts.length > 0) return parts.join("\n");
+    }
+  }
+  return undefined;
+}
+
 function appendMarkdown(blocks: ResponseBlock[], content: string, messageId: string): ResponseBlock[] {
   const last = blocks[blocks.length - 1];
   if (last?.type === "markdown") {
@@ -98,37 +122,58 @@ function appendMarkdown(blocks: ResponseBlock[], content: string, messageId: str
   return [...blocks, { id: blockId(messageId, `markdown-${blocks.length}`), type: "markdown", content }];
 }
 
+function getOrCreateThinkingBlock(blocks: ResponseBlock[], messageId: string): { blocks: ResponseBlock[]; thinking: Extract<ResponseBlock, { type: "thinking" }> } {
+  const last = blocks[blocks.length - 1];
+  if (last?.type === "thinking") return { blocks, thinking: last };
+  const newBlock: Extract<ResponseBlock, { type: "thinking" }> = { id: blockId(messageId, `thinking-${blocks.length}`), type: "thinking", steps: [], startedAt: Date.now() };
+  return { blocks: [...blocks, newBlock], thinking: newBlock };
+}
+
+function markThinkingCompleted(blocks: ResponseBlock[], now: number): ResponseBlock[] {
+  return blocks.map((b) =>
+    b.type === "thinking" && !b.completedAt ? { ...b, completedAt: now } : b,
+  );
+}
+
 export function applyChatEvent(message: BlockMessage, event: ChatEvent): BlockMessage {
   const now = Date.now();
 
   switch (event.type) {
-    case "text_delta":
-      return { ...message, blocks: appendMarkdown(message.blocks, event.content ?? "", message.id), updatedAt: now };
-    case "tool_call":
-      return {
-        ...message,
-        blocks: [
-          ...message.blocks,
-          {
-            id: blockId(message.id, `tool-${message.blocks.length}`),
-            type: "tool",
-            name: event.tool ?? "unknown",
-            status: "running",
-            input: event.arguments,
-          },
-        ],
-        updatedAt: now,
+    case "text_delta": {
+      return { ...message, blocks: appendMarkdown(markThinkingCompleted(message.blocks, now), event.content ?? "", message.id), updatedAt: now };
+    }
+    case "reasoning_delta": {
+      const { blocks, thinking } = getOrCreateThinkingBlock(message.blocks, message.id);
+      const steps = [...thinking.steps];
+      const lastStep = steps[steps.length - 1];
+      if (lastStep?.type === "reasoning") {
+        steps[steps.length - 1] = { ...lastStep, content: lastStep.content + (event.content ?? "") };
+      } else {
+        steps.push({ type: "reasoning", content: event.content ?? "" });
+      }
+      const updatedThinking = { ...thinking, steps, startedAt: thinking.startedAt ?? now };
+      return { ...message, blocks: [...blocks.slice(0, -1), updatedThinking], updatedAt: now };
+    }
+    case "tool_call": {
+      const { blocks, thinking } = getOrCreateThinkingBlock(message.blocks, message.id);
+      const updatedThinking = {
+        ...thinking,
+        steps: [...thinking.steps, { type: "tool" as const, name: event.tool ?? "unknown", status: "running" as const, input: event.arguments }],
       };
-    case "tool_result":
-      return {
-        ...message,
-        blocks: message.blocks.map((block) =>
-          block.type === "tool" && block.status === "running"
-            ? { ...block, status: "done", outputPreview: event.content }
-            : block,
-        ),
-        updatedAt: now,
-      };
+      return { ...message, blocks: [...blocks.slice(0, -1), updatedThinking], updatedAt: now };
+    }
+    case "tool_result": {
+      const lastThinking = [...message.blocks].reverse().find((b) => b.type === "thinking");
+      if (!lastThinking || lastThinking.type !== "thinking") return message;
+      const steps = [...lastThinking.steps];
+      const idx = steps.findLastIndex((s) => s.type === "tool" && s.status === "running");
+      if (idx >= 0) {
+        const step = steps[idx] as Extract<ThinkingStep, { type: "tool" }>;
+        steps[idx] = { ...step, status: "done", outputPreview: event.content };
+      }
+      const updatedThinking = { ...lastThinking, steps };
+      return { ...message, blocks: message.blocks.map((b) => b === lastThinking ? updatedThinking : b), updatedAt: now };
+    }
     case "chart": {
       let option: Record<string, unknown> = {};
       try {
@@ -169,7 +214,7 @@ export function applyChatEvent(message: BlockMessage, event: ChatEvent): BlockMe
       return {
         ...message,
         blocks: [
-          ...message.blocks,
+          ...markThinkingCompleted(message.blocks, now),
           {
             id: blockId(message.id, `error-${message.blocks.length}`),
             type: "error",
@@ -180,6 +225,8 @@ export function applyChatEvent(message: BlockMessage, event: ChatEvent): BlockMe
         ],
         updatedAt: now,
       };
+    case "done":
+      return { ...message, blocks: markThinkingCompleted(message.blocks, now), updatedAt: now };
     default:
       return message;
   }

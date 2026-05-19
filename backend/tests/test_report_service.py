@@ -36,7 +36,7 @@ def test_engine():
 @pytest.fixture
 def service(temp_reports_dir, monkeypatch, test_engine):
     """创建报告服务实例（使用内存数据库）"""
-    monkeypatch.setattr("core.report_service.REPORTS_DIR", temp_reports_dir)
+    monkeypatch.setattr("core.report_service._REPORTS_DIR", temp_reports_dir)
 
     def _get_test_session():
         return Session(test_engine)

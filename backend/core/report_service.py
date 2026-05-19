@@ -1,5 +1,6 @@
 """报告业务逻辑服务"""
 import hashlib
+import os
 import re
 import uuid
 from datetime import datetime
@@ -9,14 +10,14 @@ from typing import Optional
 from core.database import get_app_session
 from core.models import ReportRow
 
-REPORTS_DIR = Path("reports")
+_REPORTS_DIR = Path(os.path.join(os.path.dirname(os.path.dirname(__file__)), "reports"))
 
 
 class ReportService:
     """报告 CRUD 服务"""
 
     def __init__(self):
-        REPORTS_DIR.mkdir(exist_ok=True)
+        _REPORTS_DIR.mkdir(exist_ok=True)
 
     def _generate_filename(self, title: str, report_id: str) -> str:
         """生成安全的文件名（包含 UUID 避免碰撞）"""
@@ -50,7 +51,7 @@ class ReportService:
         """创建新报告"""
         report_id = str(uuid.uuid4())
         filename = self._generate_filename(title, report_id)
-        file_path = REPORTS_DIR / filename
+        file_path = _REPORTS_DIR / filename
 
         # 写入文件
         report_content = f"# {title}\n\n"

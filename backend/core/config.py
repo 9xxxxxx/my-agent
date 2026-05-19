@@ -6,6 +6,9 @@ from dotenv import load_dotenv
 _is_production = os.getenv("APP_ENV", "development") == "production"
 load_dotenv(override=not _is_production)
 
+# Disable OpenAI Agents SDK tracing (uses api.openai.com which fails with non-OpenAI keys)
+os.environ.setdefault("OPENAI_AGENTS_DISABLE_TRACING", "true")
+
 
 class Settings:
     DATABASE_URL: str = os.getenv("AGENT_DATABASE_URL", "")
