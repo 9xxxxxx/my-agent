@@ -64,7 +64,7 @@ export function ChartEditor({
         left: "center",
       },
       tooltip: {
-        trigger: chartType === "pie" ? "item" : "axis",
+        trigger: chartType === "pie" || chartType === "funnel" || chartType === "treemap" ? "item" : "axis",
       },
       color: scheme.colors,
     };
@@ -105,6 +105,220 @@ export function ChartEditor({
                 name: title,
               },
             ],
+          },
+        ],
+      };
+    }
+
+    if (chartType === "funnel") {
+      return {
+        ...base,
+        series: [
+          {
+            type: "funnel",
+            left: "10%",
+            width: "80%",
+            data: data.labels.map((label, i) => ({
+              name: label,
+              value: data.values[i] || 0,
+            })),
+          },
+        ],
+      };
+    }
+
+    if (chartType === "treemap") {
+      return {
+        ...base,
+        series: [
+          {
+            type: "treemap",
+            data: data.labels.map((label, i) => ({
+              name: label,
+              value: data.values[i] || 0,
+            })),
+          },
+        ],
+      };
+    }
+
+    if (chartType === "boxplot") {
+      return {
+        ...base,
+        xAxis: {
+          type: "category",
+          data: data.labels,
+          axisLabel: {
+            rotate: data.labels.length > 10 ? 30 : 0,
+          },
+        },
+        yAxis: {
+          type: "value",
+        },
+        grid: {
+          left: "3%",
+          right: "4%",
+          bottom: "3%",
+          containLabel: true,
+        },
+        series: [
+          {
+            type: "boxplot",
+            data: data.values,
+          },
+        ],
+      };
+    }
+
+    if (chartType === "candlestick") {
+      return {
+        ...base,
+        xAxis: {
+          type: "category",
+          data: data.labels,
+          axisLabel: {
+            rotate: data.labels.length > 10 ? 30 : 0,
+          },
+        },
+        yAxis: {
+          type: "value",
+          scale: true,
+        },
+        grid: {
+          left: "3%",
+          right: "4%",
+          bottom: "3%",
+          containLabel: true,
+        },
+        series: [
+          {
+            type: "candlestick",
+            data: data.values,
+          },
+        ],
+      };
+    }
+
+    if (chartType === "waterfall") {
+      const values = data.values;
+      const baseData: number[] = [];
+      const positiveData: (number | string)[] = [];
+      const negativeData: (number | string)[] = [];
+      let cumulative = 0;
+
+      values.forEach((v) => {
+        if (v >= 0) {
+          baseData.push(cumulative);
+          positiveData.push(v);
+          negativeData.push("-");
+          cumulative += v;
+        } else {
+          cumulative += v;
+          baseData.push(cumulative);
+          positiveData.push("-");
+          negativeData.push(Math.abs(v));
+        }
+      });
+
+      return {
+        ...base,
+        xAxis: {
+          type: "category",
+          data: data.labels,
+          axisLabel: {
+            rotate: data.labels.length > 10 ? 30 : 0,
+          },
+        },
+        yAxis: {
+          type: "value",
+        },
+        grid: {
+          left: "3%",
+          right: "4%",
+          bottom: "3%",
+          containLabel: true,
+        },
+        series: [
+          {
+            type: "bar",
+            stack: "waterfall",
+            data: baseData,
+            itemStyle: { color: "transparent" },
+            emphasis: { itemStyle: { color: "transparent" } },
+          },
+          {
+            type: "bar",
+            stack: "waterfall",
+            data: positiveData,
+            name: "增加",
+            itemStyle: { color: "#059669" },
+          },
+          {
+            type: "bar",
+            stack: "waterfall",
+            data: negativeData,
+            name: "减少",
+            itemStyle: { color: "#ef4444" },
+          },
+        ],
+        legend: {
+          data: ["增加", "减少"],
+          bottom: 0,
+        },
+      };
+    }
+
+    if (chartType === "sankey") {
+      const nodes = new Set<string>();
+      const links: { source: string; target: string; value: number }[] = [];
+
+      data.labels.forEach((label, i) => {
+        if (i < data.labels.length - 1) {
+          nodes.add(label);
+          nodes.add(data.labels[i + 1]);
+          links.push({
+            source: label,
+            target: data.labels[i + 1],
+            value: data.values[i] || 0,
+          });
+        }
+      });
+
+      return {
+        ...base,
+        tooltip: { trigger: "item" },
+        series: [
+          {
+            type: "sankey",
+            data: Array.from(nodes).map((name) => ({ name })),
+            links,
+            emphasis: { focus: "adjacency" },
+            lineStyle: { color: "gradient", curveness: 0.5 },
+          },
+        ],
+      };
+    }
+
+    if (chartType === "horizontal_bar") {
+      return {
+        ...base,
+        yAxis: {
+          type: "category",
+          data: data.labels,
+        },
+        xAxis: {
+          type: "value",
+        },
+        grid: {
+          left: "3%",
+          right: "4%",
+          bottom: "3%",
+          containLabel: true,
+        },
+        series: [
+          {
+            type: "bar",
+            data: data.values,
           },
         ],
       };
