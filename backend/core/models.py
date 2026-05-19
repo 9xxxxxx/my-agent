@@ -35,3 +35,22 @@ class DBProfileRow(Base):
     config: Mapped[dict] = mapped_column(JSON)
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[float] = mapped_column(Float)
+
+
+class ReportRow(Base):
+    __tablename__ = "reports"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    title: Mapped[str] = mapped_column(String)
+    filename: Mapped[str] = mapped_column(String)
+    file_path: Mapped[str] = mapped_column(String)
+    content_hash: Mapped[str] = mapped_column(String)
+    summary: Mapped[str] = mapped_column(String, default="")
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[float] = mapped_column(Float)
+    updated_at: Mapped[float] = mapped_column(Float)
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("summary", "")
+        kwargs.setdefault("tags", [])
+        super().__init__(**kwargs)
