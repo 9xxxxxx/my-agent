@@ -51,7 +51,7 @@ interface StoredConversation {
 }
 
 export interface LLMConfig {
-  provider: "openai" | "deepseek" | "custom";
+  provider: "deepseek" | "mimo" | "custom";
   apiKey: string;
   baseUrl: string;
   model: string;

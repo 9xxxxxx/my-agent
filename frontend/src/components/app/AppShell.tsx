@@ -105,7 +105,7 @@ export default function AppShell() {
               collapseButton={
                 <button
                   onClick={() => setLeftCollapsed(true)}
-                  className="rounded-md p-1.5 text-[--muted-foreground] hover:bg-[--muted] hover:text-[--foreground] transition-colors cursor-pointer"
+                  className="rounded-md p-1.5 text-[--muted-foreground] hover:bg-[--muted] hover:text-[--foreground] active:scale-90 transition-all duration-150 cursor-pointer"
                   aria-label="收起对话列表"
                 >
                   <PanelLeftClose size={16} />
@@ -117,7 +117,7 @@ export default function AppShell() {
           <div className="flex flex-col items-center pt-3">
             <button
               onClick={() => setLeftCollapsed(false)}
-              className="rounded-md p-2 text-[--muted-foreground] hover:bg-[--muted] hover:text-[--foreground] transition-colors cursor-pointer"
+              className="rounded-md p-2 text-[--muted-foreground] hover:bg-[--muted] hover:text-[--foreground] active:scale-90 transition-all duration-150 cursor-pointer"
               aria-label="展开对话列表"
             >
               <PanelLeft size={18} />
@@ -151,7 +151,7 @@ export default function AppShell() {
 
       <main className="flex min-w-0 flex-col overflow-hidden">
         <header className="flex h-14 shrink-0 items-center gap-3 bg-[--card] px-3 sm:px-4">
-          <button className="rounded-md p-2 text-[--muted-foreground] hover:bg-[--muted] lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="打开对话列表">
+          <button className="rounded-md p-2 text-[--muted-foreground] hover:bg-[--muted] hover:text-[--foreground] active:scale-90 transition-all duration-150 lg:hidden cursor-pointer" onClick={() => setSidebarOpen(true)} aria-label="打开对话列表">
             <Menu size={18} />
           </button>
           <div className="truncate text-[14px] font-semibold text-[--foreground]">{mounted ? (activeConversation?.title || "数据分析助手") : "数据分析助手"}</div>
@@ -213,14 +213,14 @@ export default function AppShell() {
             </div>
           )}
           {mounted && activeConversation && activeConversation.messages.length > 0 && (
-            <button className="rounded-md p-2 text-[--muted-foreground] hover:bg-[--muted] shrink-0" onClick={handleExport} aria-label="导出对话">
+            <button className="rounded-md p-2 text-[--muted-foreground] hover:bg-[--muted] hover:text-[--foreground] active:scale-90 transition-all duration-150 shrink-0 cursor-pointer" onClick={handleExport} aria-label="导出对话">
               <Download size={17} />
             </button>
           )}
-          <button className="rounded-md p-2 text-[--muted-foreground] hover:bg-[--muted] shrink-0" onClick={() => setSettingsOpen(true)} aria-label="设置">
+          <button className="rounded-md p-2 text-[--muted-foreground] hover:bg-[--muted] hover:text-[--foreground] active:scale-90 transition-all duration-150 shrink-0 cursor-pointer" onClick={() => setSettingsOpen(true)} aria-label="设置">
             <Settings size={17} />
           </button>
-          <button className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-[--muted-foreground] border border-[--border] hover:bg-[--muted] hover:text-[--foreground] transition-all duration-150 shrink-0 cursor-pointer" aria-label="登录">
+          <button className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-[--muted-foreground] border border-[--border] hover:bg-[--muted] hover:text-[--foreground] active:scale-95 transition-all duration-150 shrink-0 cursor-pointer" aria-label="登录">
             <LogIn size={14} />
             <span className="hidden sm:inline">登录</span>
           </button>
@@ -233,7 +233,7 @@ export default function AppShell() {
         <div className="flex h-14 shrink-0 items-center gap-2 px-3">
           <button
             onClick={() => setRightCollapsed(!rightCollapsed)}
-            className="rounded-md p-1.5 text-[--muted-foreground] hover:bg-[--muted] hover:text-[--foreground] transition-colors cursor-pointer"
+            className="rounded-md p-1.5 text-[--muted-foreground] hover:bg-[--muted] hover:text-[--foreground] active:scale-90 transition-all duration-150 cursor-pointer"
             aria-label={rightCollapsed ? "展开运行状态" : "收起运行状态"}
           >
             {rightCollapsed ? <PanelRight size={16} /> : <PanelRightClose size={16} />}

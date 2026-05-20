@@ -6,7 +6,7 @@ AI 驱动的智能数据分析助手。用自然语言提问，自动完成数�
 
 ### 智能对话
 - 自然语言提问，自动路由到专业 Agent 处理
-- SSE 实时流式响应，打字机效果
+- SSE 实时流式响应，逐字打字机效果（字符队列 + requestAnimationFrame）
 - 多轮对话记忆，上下文连贯
 - 停止生成、重试、编辑重发
 - 对话记录本地 + 后端双持久化
@@ -109,6 +109,14 @@ pip install uv
 uv sync
 uv run uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
+
+> **国内镜像加速**：如果下载依赖缓慢，可配置镜像源：
+> ```bash
+> # pnpm 镜像
+> pnpm config set registry https://registry.npmmirror.com
+> # uv 镜像（写入 ~/.config/uv/uv.toml）
+> echo 'index-url = "https://mirrors.aliyun.com/pypi/simple/"' > ~/.config/uv/uv.toml
+> ```
 
 后端运行在 http://localhost:8000，API 文档在 http://localhost:8000/docs
 
@@ -309,6 +317,15 @@ my-agent/
 | 报告生成 | 报告、导出、通知、发送、飞书、邮件、markdown | ReportWriter |
 | 日常对话 | 其他所有消息 | GeneralAssistant |
 | 短消息歧义 | ≤4 字符的"数据"、"表"、"分析" | GeneralAssistant |
+
+### 前端流式渲染
+
+前端采用 **字符队列 + `requestAnimationFrame` 动画循环** 实现逐字打字效果：
+
+1. SSE 事件到达后，`text_delta` / `reasoning_delta` 被拆成单字符放入队列
+2. `requestAnimationFrame` 循环每帧从队列取 4 个字符渲染（约 240 字/秒）
+3. 非文本事件（工具调用、图表等）立即处理
+4. 流结束后等待队列清空再结束 loading 状态
 
 ### SSE 事件流
 

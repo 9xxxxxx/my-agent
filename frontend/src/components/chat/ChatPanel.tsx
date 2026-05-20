@@ -3,7 +3,7 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { useChatStore } from "@/stores/chat";
 import { useConnectionStore } from "@/stores/connection";
-import { streamChat } from "@/lib/api";
+import { streamChat, type ChatEvent } from "@/lib/api";
 import MessageBubble from "./MessageBubble";
 import InputBar from "./InputBar";
 import { toast } from "sonner";
@@ -38,10 +38,11 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    // Only auto-scroll if user is near the bottom (within 150px)
-    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
     if (isNearBottom) {
-      el.scrollTop = el.scrollHeight;
+      requestAnimationFrame(() => {
+        el.scrollTo({ top: el.scrollHeight, behavior: "instant" });
+      });
     }
   }, [messages]);
 
@@ -116,68 +117,97 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
       const dbProfile = getActiveDB() ?? undefined;
       const dbUrl = assembleDbUrl(dbProfile);
 
-      try {
-        for await (const event of streamChat(message, llm.config, controller.signal, dbUrl || undefined, history)) {
-          // Re-read store state each iteration for conversation-scoped mutators
-          const s = useChatStore.getState();
-          switch (event.type) {
-            case "text_delta":
-              s.appendToAssistantOf(convId, event.content || "");
-              break;
-            case "reasoning_delta":
-              s.appendToReasoningOf(convId, event.content || "");
-              break;
-            case "tool_call":
-              if (event.tool) {
-                s.addToolCallTo(convId, { name: event.tool, arguments: event.arguments });
-                s.setCurrentToolOf(convId, event.tool);
-              }
-              break;
-            case "tool_result":
-              s.setToolOutputOf(convId, event.call_id, event.content || "");
-              s.setCurrentToolOf(convId, null);
-              break;
-            case "chart":
-              try {
-                s.setChartOf(convId, JSON.parse(event.content || "{}"));
-              } catch {}
-              break;
-            case "agent_change":
-              if (event.display_name) {
-                s.setCurrentAgentOf(convId, event.display_name);
-              }
-              break;
-            case "agent_status":
-              s.applyEventToAssistantOf(convId, event);
-              if (event.display_name) {
-                s.setCurrentAgentOf(convId, event.display_name);
-              }
-              break;
-            case "handoff":
-              if (event.target_display) {
-                s.addMessageTo(convId, {
-                  id: crypto.randomUUID(),
-                  role: "system",
-                  content: `切换至 ${event.target_display}`,
-                  timestamp: Date.now(),
-                });
-                s.setCurrentAgentOf(convId, event.target_display);
-              }
-              break;
-            case "error":
-              toast.error(event.content || "发生错误");
-              s.applyEventToAssistantOf(convId, {
-                type: "error",
-                code: event.code ?? "UNKNOWN_ERROR",
-                message: event.message ?? event.content ?? "发生错误",
-                recoverable: event.recoverable ?? true,
-              });
-              break;
-            case "done":
-              s.applyEventToAssistantOf(convId, event);
-              break;
+      // --- Typewriter animation: queue + requestAnimationFrame ---
+      // Text/reasoning deltas go into a character queue; a rAF loop drains it
+      // at a controlled rate (~4 chars per frame ≈ 240 chars/sec) so the user
+      // sees a smooth streaming effect instead of a wall of text.
+      type QueueItem = { type: "text"; char: string } | { type: "event"; event: ChatEvent };
+      const queue: QueueItem[] = [];
+      let rafId = 0;
+
+      const processQueue = () => {
+        if (queue.length === 0) {
+          rafId = 0;
+          return;
+        }
+        const s = useChatStore.getState();
+        // Drain text chars in batches of 4 per frame
+        let charsThisFrame = 0;
+        while (queue.length > 0 && charsThisFrame < 4) {
+          const item = queue.shift()!;
+          if (item.type === "text") {
+            s.appendToAssistantOf(convId, item.char);
+            charsThisFrame++;
+          } else {
+            // Non-text events are processed immediately
+            processEvent(item.event, s);
           }
         }
+        rafId = requestAnimationFrame(processQueue);
+      };
+
+      const processEvent = (event: ChatEvent, s: ReturnType<typeof useChatStore.getState>) => {
+        switch (event.type) {
+          case "tool_call":
+            if (event.tool) {
+              s.addToolCallTo(convId, { name: event.tool, arguments: event.arguments });
+              s.setCurrentToolOf(convId, event.tool);
+            }
+            break;
+          case "tool_result":
+            s.setToolOutputOf(convId, event.call_id, event.content || "");
+            s.setCurrentToolOf(convId, null);
+            break;
+          case "chart":
+            try { s.setChartOf(convId, JSON.parse(event.content || "{}")); } catch {}
+            break;
+          case "agent_change":
+            if (event.display_name) s.setCurrentAgentOf(convId, event.display_name);
+            break;
+          case "agent_status":
+            s.applyEventToAssistantOf(convId, event);
+            if (event.display_name) s.setCurrentAgentOf(convId, event.display_name);
+            break;
+          case "handoff":
+            if (event.target_display) {
+              s.addMessageTo(convId, { id: crypto.randomUUID(), role: "system", content: `切换至 ${event.target_display}`, timestamp: Date.now() });
+              s.setCurrentAgentOf(convId, event.target_display);
+            }
+            break;
+          case "error":
+            toast.error(event.content || "发生错误");
+            s.applyEventToAssistantOf(convId, { type: "error", code: event.code ?? "UNKNOWN_ERROR", message: event.message ?? event.content ?? "发生错误", recoverable: event.recoverable ?? true });
+            break;
+          case "done":
+            s.applyEventToAssistantOf(convId, event);
+            break;
+        }
+      };
+
+      try {
+        for await (const event of streamChat(message, llm.config, controller.signal, dbUrl || undefined, history)) {
+          if (event.type === "text_delta" || event.type === "reasoning_delta") {
+            // Split deltas into individual characters and enqueue them
+            const text = event.content || "";
+            for (const ch of text) {
+              queue.push({ type: "text", char: ch });
+            }
+          } else {
+            queue.push({ type: "event", event });
+          }
+          // Start the animation loop if not already running
+          if (!rafId) {
+            rafId = requestAnimationFrame(processQueue);
+          }
+        }
+        // Wait for the queue to drain after the stream ends
+        await new Promise<void>((resolve) => {
+          const check = () => {
+            if (queue.length === 0 && rafId === 0) { resolve(); return; }
+            requestAnimationFrame(check);
+          };
+          check();
+        });
       } catch (err: unknown) {
         if (err instanceof Error && err.name !== "AbortError") {
           toast.error(err.message);
@@ -277,7 +307,7 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
           </div>
         ) : (
           /* Message list */
-          <div className="max-w-[1000px] mx-auto px-4 sm:px-6 pt-4 sm:pt-6 pb-24 space-y-4" style={{ "--chat-font-size": `${fontSize}px` } as React.CSSProperties}>
+          <div className="max-w-[1000px] mx-auto px-4 sm:px-6 pt-4 sm:pt-6 pb-4 space-y-4" style={{ "--chat-font-size": `${fontSize}px` } as React.CSSProperties}>
             {messages.map((msg, i) => {
               // 跳过空的 assistant 消息（流式传输尚未到达），避免与 loading 指示器重复
               if (msg.role === "assistant" && !msg.content && isLoading && i === messages.length - 1) {
@@ -336,20 +366,19 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
         )}
       </div>
 
-      {/* Floating input bar — overlaid on content */}
+      {/* Gradient fade + input bar */}
       {mounted && messages.length > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
-          <div className="max-w-[1000px] mx-auto px-4 sm:px-6 pb-4 sm:pb-5">
-            <div className="pointer-events-auto">
-              <InputBar
-                key={editContent ?? "composer"}
-                onSend={(msg) => { setEditContent(null); handleSend(msg); }}
-                disabled={false}
-                defaultValue={editContent}
-                isLoading={isLoading}
-                onStop={handleStop}
-              />
-            </div>
+        <div className="shrink-0 relative">
+          <div className="absolute -top-16 left-0 right-0 h-16 bg-gradient-to-t from-[--background] to-transparent pointer-events-none" />
+          <div className="max-w-[1000px] mx-auto px-4 sm:px-6 pb-4 sm:pb-5 pt-2">
+            <InputBar
+              key={editContent ?? "composer"}
+              onSend={(msg) => { setEditContent(null); handleSend(msg); }}
+              disabled={false}
+              defaultValue={editContent}
+              isLoading={isLoading}
+              onStop={handleStop}
+            />
           </div>
         </div>
       )}

@@ -68,7 +68,11 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] text-[--muted-foreground] hover:bg-[--muted] hover:text-[--foreground]"
+      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] active:scale-95 transition-all duration-100 ${
+        copied
+          ? "bg-[--success]/10 text-[--success]"
+          : "text-[--muted-foreground] hover:bg-[--muted] hover:text-[--foreground]"
+      }`}
       aria-label={copied ? "已复制" : "复制"}
     >
       {copied ? <Check size={13} /> : <Copy size={13} />}
@@ -95,12 +99,12 @@ export default function MessageBubble({ message, onRetry, onEdit }: Props) {
           <div className="rounded-2xl rounded-br-md bg-[--muted] px-4 py-3 text-[15px] leading-7 text-[--foreground] shadow-sm border border-[--border]">
             <p className="whitespace-pre-wrap">{text}</p>
           </div>
-          <div className="mt-1 flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          <div className="mt-1 flex justify-end gap-1 opacity-0 translate-y-1 transition-all duration-200 group-hover:opacity-100 group-hover:translate-y-0 focus-within:opacity-100 focus-within:translate-y-0">
             {text && <CopyButton text={text} />}
             {onEdit && (
               <button
                 onClick={() => onEdit(text)}
-                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] text-[--muted-foreground] hover:bg-[--muted] hover:text-[--foreground]"
+                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] text-[--muted-foreground] hover:bg-[--muted] hover:text-[--foreground] active:scale-95 transition-transform duration-100"
                 aria-label="编辑并重新发送"
               >
                 <SquarePen size={13} />
@@ -220,12 +224,12 @@ export default function MessageBubble({ message, onRetry, onEdit }: Props) {
         <div className="px-1 text-[--foreground]">
           <MessageBlocks blocks={contentBlocks} />
         </div>
-        <div className="mt-2 flex items-center gap-1">
+        <div className="mt-2 flex items-center gap-1 opacity-60 hover:opacity-100 transition-opacity duration-200">
           {text && <CopyButton text={text} />}
           {onRetry && (
             <button
               onClick={onRetry}
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] text-[--muted-foreground] hover:bg-[--muted] hover:text-[--foreground]"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] text-[--muted-foreground] hover:bg-[--muted] hover:text-[--foreground] active:scale-95 transition-transform duration-100"
               aria-label="重新生成"
             >
               <RotateCcw size={13} />

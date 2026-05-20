@@ -39,6 +39,9 @@ export function RunInspector({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
+  const displayAgent = mounted ? currentAgent : null;
+  const displayTool = mounted ? currentTool : null;
+
   const traceBlocks: TraceBlock[] = mounted ? messages.flatMap((message) =>
     message.blocks.flatMap((block): TraceBlock[] => {
       if (block.type === "agent_status" || block.type === "error" || block.type === "tool") return [block];
@@ -68,42 +71,42 @@ export function RunInspector({
         <div className="space-y-2">
           {/* Agent card */}
           <div className={`flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-200 ${
-            currentAgent ? "bg-blue-50 border border-blue-200" : "bg-[--muted]"
+            displayAgent ? "bg-blue-50 border border-blue-200" : "bg-[--muted]"
           }`}>
             <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-              currentAgent ? "bg-blue-100 text-blue-600" : "bg-[--secondary] text-[--muted-foreground]"
+              displayAgent ? "bg-blue-100 text-blue-600" : "bg-[--secondary] text-[--muted-foreground]"
             }`}>
               <Bot size={15} />
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-[10px] font-medium uppercase tracking-wider text-[--muted-foreground]/60">Agent</div>
               <div className={`truncate text-[13px] font-medium ${
-                currentAgent ? "text-blue-700" : "text-[--muted-foreground]"
+                displayAgent ? "text-blue-700" : "text-[--muted-foreground]"
               }`}>
-                {currentAgent || "待命"}
+                {displayAgent || "待命"}
               </div>
             </div>
-            <StatusDot active={!!currentAgent} color="bg-blue-500" />
+            <StatusDot active={!!displayAgent} color="bg-blue-500" />
           </div>
 
           {/* Tool card */}
           <div className={`flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-200 ${
-            currentTool ? "bg-amber-50 border border-amber-200" : "bg-[--muted]"
+            displayTool ? "bg-amber-50 border border-amber-200" : "bg-[--muted]"
           }`}>
             <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-              currentTool ? "bg-amber-100 text-amber-600" : "bg-[--secondary] text-[--muted-foreground]"
+              displayTool ? "bg-amber-100 text-amber-600" : "bg-[--secondary] text-[--muted-foreground]"
             }`}>
               <Cpu size={15} />
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-[10px] font-medium uppercase tracking-wider text-[--muted-foreground]/60">Tool</div>
               <div className={`truncate text-[13px] font-medium ${
-                currentTool ? "text-amber-700" : "text-[--muted-foreground]"
+                displayTool ? "text-amber-700" : "text-[--muted-foreground]"
               }`}>
-                {currentTool || "无活动工具"}
+                {displayTool || "无活动工具"}
               </div>
             </div>
-            {currentTool && <Loader2 size={14} className="shrink-0 text-amber-500 animate-spin" />}
+            {displayTool && <Loader2 size={14} className="shrink-0 text-amber-500 animate-spin" />}
           </div>
         </div>
 

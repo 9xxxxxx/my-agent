@@ -203,14 +203,14 @@ export function ConversationSidebar({
           <div className="shrink-0 px-3 pb-2 space-y-0.5">
             <button
               onClick={onCreate}
-              className="group w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-[--muted-foreground] hover:text-[--foreground] hover:bg-[--muted]/50 transition-all duration-200 cursor-pointer"
+              className="group w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-[--muted-foreground] hover:text-[--foreground] hover:bg-[--primary]/10 active:bg-[--primary]/15 active:scale-[0.97] transition-all duration-200 cursor-pointer"
             >
               <SquarePen size={15} strokeWidth={1.8} />
               新建对话
             </button>
             <button
               onClick={() => setSearchOpen(true)}
-              className="group w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-[--muted-foreground] hover:text-[--foreground] hover:bg-[--muted]/50 transition-all duration-200 cursor-pointer"
+              className="group w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-[--muted-foreground] hover:text-[--foreground] hover:bg-[--primary]/10 active:bg-[--primary]/15 active:scale-[0.97] transition-all duration-200 cursor-pointer"
               aria-label="搜索对话"
             >
               <Search size={15} strokeWidth={1.8} />
@@ -271,19 +271,19 @@ export function ConversationSidebar({
                       else onSelect(conversation.id);
                     }
                   }}
-                  className={`group relative mb-0.5 flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition-all duration-200 cursor-pointer ${
+                  className={`group relative mb-0.5 flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition-all duration-200 cursor-pointer active:scale-[0.98] ${
                     active && !selectionMode
-                      ? "bg-[--primary]/[0.09] text-[--foreground] shadow-sm shadow-[--primary]/10"
+                      ? "bg-[--primary]/[0.20] text-[--foreground] ring-1 ring-[--primary]/20"
                       : selected
                         ? "bg-[--primary]/[0.06] text-[--foreground]"
-                        : "text-[--muted-foreground] hover:bg-[--muted]/60 hover:text-[--foreground]"
+                        : "text-[--muted-foreground] hover:bg-[--primary]/10 hover:text-[--foreground] hover:shadow-[0_4px_14px_-2px_rgba(37,99,235,0.25)]"
                   }`}
                 >
                   {/* Active indicator — left accent + subtle glow */}
                   {active && !selectionMode && (
                     <>
-                      <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-[--primary]" />
-                      <div className="absolute left-0 top-2 bottom-2 w-[6px] rounded-r-full bg-[--primary]/10 blur-[2px]" />
+                      <div className="absolute left-0 top-2 bottom-2 w-[3.5px] rounded-r-full bg-[--primary]" />
+                      <div className="absolute left-0 top-2 bottom-2 w-[8px] rounded-r-full bg-[--primary]/10 blur-[2px]" />
                     </>
                   )}
 
@@ -300,8 +300,8 @@ export function ConversationSidebar({
 
                   {/* Content — title only */}
                   <span className="min-w-0 flex-1">
-                    <span className={`block truncate text-[14px] font-medium leading-snug ${
-                      active ? "text-[--foreground]" : ""
+                    <span className={`block truncate text-[14px] leading-snug ${
+                      active ? "text-[--foreground] font-semibold" : "font-medium"
                     }`}>{conversation.title}</span>
                   </span>
 
@@ -342,7 +342,7 @@ export function ConversationSidebar({
                             e.stopPropagation();
                             setConfirmDeleteId(conversation.id);
                           }}
-                          className="rounded-lg p-1.5 text-[--muted-foreground] opacity-0 transition-all duration-200 hover:bg-[--destructive]/[0.06] hover:text-[--destructive] group-hover:opacity-100 cursor-pointer"
+                          className="rounded-lg p-1.5 text-[--muted-foreground] opacity-0 transition-all duration-200 hover:bg-[--destructive]/[0.06] hover:text-[--destructive] group-hover:opacity-100 cursor-pointer active:scale-90"
                           aria-label="删除对话"
                         >
                           <Trash2 size={12} strokeWidth={1.8} />
@@ -361,7 +361,7 @@ export function ConversationSidebar({
                   <div className="mb-2">
                     <button
                       onClick={() => setRecentOpen(!recentOpen)}
-                      className="w-full flex items-center gap-1 px-2 py-1.5 rounded-lg text-[13px] font-bold text-[--muted-foreground]/60 hover:text-[--muted-foreground]/90 hover:bg-[--muted]/40 transition-colors cursor-pointer"
+                      className="w-full flex items-center gap-1 px-2 py-1.5 rounded-lg text-[15px] font-bold text-[--muted-foreground]/70 hover:text-[--muted-foreground] hover:bg-[--primary]/8 transition-all duration-200 cursor-pointer"
                     >
                       最近
                       <ChevronDown
