@@ -34,17 +34,47 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortMapRef = useRef<Map<string, AbortController>>(new Map());
   const [editContent, setEditContent] = useState<string | null>(null);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const isAutoScrollRef = useRef(true);
+  const prevMsgCountRef = useRef(0);
 
+  // Track whether user is near bottom
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
-    if (isNearBottom) {
-      requestAnimationFrame(() => {
-        el.scrollTo({ top: el.scrollHeight, behavior: "instant" });
+    const handleScroll = () => {
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+      isAutoScrollRef.current = nearBottom;
+      setShowScrollBtn(!nearBottom && el.scrollHeight > el.clientHeight + 200);
+    };
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    return () => el.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  // Auto-scroll: smooth for new messages, instant for streaming updates
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (!isAutoScrollRef.current) return;
+
+    const isNewMessage = messages.length > prevMsgCountRef.current;
+    prevMsgCountRef.current = messages.length;
+
+    requestAnimationFrame(() => {
+      el.scrollTo({
+        top: el.scrollHeight,
+        behavior: isNewMessage ? "smooth" : "instant",
       });
-    }
+    });
   }, [messages]);
+
+  const scrollToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    isAutoScrollRef.current = true;
+    setShowScrollBtn(false);
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, []);
 
   // Abort all streams on unmount
   useEffect(() => {
@@ -109,6 +139,12 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
       });
       store.addMessageTo(convId, createAssistantMessage(crypto.randomUUID()));
       store.setLoadingOf(convId, true);
+
+      // Force scroll to bottom when user sends a message
+      isAutoScrollRef.current = true;
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+      });
       store.setCurrentToolOf(convId, null);
       store.setCurrentAgentOf(convId, null);
 
@@ -117,34 +153,18 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
       const dbProfile = getActiveDB() ?? undefined;
       const dbUrl = assembleDbUrl(dbProfile);
 
-      // --- Typewriter animation: queue + requestAnimationFrame ---
-      // Text/reasoning deltas go into a character queue; a rAF loop drains it
-      // at a controlled rate (~4 chars per frame ≈ 240 chars/sec) so the user
-      // sees a smooth streaming effect instead of a wall of text.
-      type QueueItem = { type: "text"; char: string } | { type: "event"; event: ChatEvent };
-      const queue: QueueItem[] = [];
-      let rafId = 0;
+      // --- 自适应弹性打字机 (Adaptive Elastic Typewriter) 与 Reasoning 直出 ---
+      // reasoning 思考过程无延迟一帧直出；text 正文通过自适应打字机缓冲区平滑播放。
+      // 当积压字符较多（网络合并返回或生成暴增）时，打字速度会自适应提速以避免播放滞后，
+      // 且严格控制非文本事件与文本的先后执行顺序，保障极佳的逐字流式感和系统健壮性。
+      type QueueItem =
+        | { type: "text"; content: string }
+        | { type: "reasoning"; content: string }
+        | { type: "event"; event: ChatEvent };
 
-      const processQueue = () => {
-        if (queue.length === 0) {
-          rafId = 0;
-          return;
-        }
-        const s = useChatStore.getState();
-        // Drain text chars in batches of 4 per frame
-        let charsThisFrame = 0;
-        while (queue.length > 0 && charsThisFrame < 4) {
-          const item = queue.shift()!;
-          if (item.type === "text") {
-            s.appendToAssistantOf(convId, item.char);
-            charsThisFrame++;
-          } else {
-            // Non-text events are processed immediately
-            processEvent(item.event, s);
-          }
-        }
-        rafId = requestAnimationFrame(processQueue);
-      };
+      const streamQueue: QueueItem[] = [];
+      let playTextBuffer = "";
+      let rafId = 0;
 
       const processEvent = (event: ChatEvent, s: ReturnType<typeof useChatStore.getState>) => {
         switch (event.type) {
@@ -184,26 +204,133 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
         }
       };
 
+      const flushPendingSync = () => {
+        const s = useChatStore.getState();
+        // 健壮性保障：若用户已经切换当前活动对话，直接废弃未消费的数据以防止串屏
+        if (s.activeId !== convId) {
+          streamQueue.length = 0;
+          playTextBuffer = "";
+          return;
+        }
+
+        let textBatch = "";
+        let reasoningBatch = "";
+
+        const flushText = () => {
+          if (textBatch) {
+            s.appendToAssistantOf(convId, textBatch);
+            textBatch = "";
+          }
+          if (reasoningBatch) {
+            s.appendToReasoningOf(convId, reasoningBatch);
+            reasoningBatch = "";
+          }
+        };
+
+        // 1. 同步清空当前的打字播放缓冲区
+        if (playTextBuffer) {
+          textBatch += playTextBuffer;
+          playTextBuffer = "";
+        }
+
+        // 2. 同步处理完队列中残余的所有项目
+        while (streamQueue.length > 0) {
+          const item = streamQueue.shift()!;
+          if (item.type === "reasoning") {
+            reasoningBatch += item.content;
+          } else if (item.type === "text") {
+            textBatch += item.content;
+          } else {
+            flushText();
+            processEvent(item.event, s);
+          }
+        }
+        flushText();
+      };
+
+      const processQueue = () => {
+        const s = useChatStore.getState();
+        if (s.activeId !== convId) {
+          rafId = 0;
+          streamQueue.length = 0;
+          playTextBuffer = "";
+          return;
+        }
+
+        let textBatch = "";
+        let reasoningBatch = "";
+
+        const flushText = () => {
+          if (textBatch) {
+            s.appendToAssistantOf(convId, textBatch);
+            textBatch = "";
+          }
+          if (reasoningBatch) {
+            s.appendToReasoningOf(convId, reasoningBatch);
+            reasoningBatch = "";
+          }
+        };
+
+        // 1. 只有当前没有正文待播放时，才从流队列中提取消费新项目，确保文本与事件发生的时序正确
+        while (streamQueue.length > 0 && playTextBuffer === "") {
+          const item = streamQueue.shift()!;
+          if (item.type === "reasoning") {
+            // reasoning 过程无延迟一帧全部消费直出
+            reasoningBatch += item.content;
+          } else if (item.type === "text") {
+            playTextBuffer += item.content;
+          } else {
+            flushText();
+            processEvent(item.event, s);
+          }
+        }
+
+        // 2. 自适应打字机处理
+        if (playTextBuffer !== "") {
+          const len = playTextBuffer.length;
+          // 自适应速率计算：积压越长字速越快，力求在 ~6 帧 (100ms) 内播放完积压文字，小量积压时维持每帧至少 1 字的逐字吐字感
+          const charsThisFrame = Math.max(1, Math.min(len, Math.ceil(len / 6)));
+          textBatch += playTextBuffer.slice(0, charsThisFrame);
+          playTextBuffer = playTextBuffer.slice(charsThisFrame);
+        }
+
+        flushText();
+
+        // 3. 调度下一帧
+        if (streamQueue.length > 0 || playTextBuffer !== "") {
+          rafId = requestAnimationFrame(processQueue);
+        } else {
+          rafId = 0;
+        }
+      };
+
       try {
         for await (const event of streamChat(message, llm.config, controller.signal, dbUrl || undefined, history)) {
-          if (event.type === "text_delta" || event.type === "reasoning_delta") {
-            // Split deltas into individual characters and enqueue them
-            const text = event.content || "";
-            for (const ch of text) {
-              queue.push({ type: "text", char: ch });
-            }
-          } else {
-            queue.push({ type: "event", event });
+          // 健壮性保障：切换对话时即刻跳出循环，中止后台流接收
+          if (useChatStore.getState().activeId !== convId) {
+            break;
           }
-          // Start the animation loop if not already running
+          if (event.type === "text_delta") {
+            const text = event.content || "";
+            if (text) streamQueue.push({ type: "text", content: text });
+          } else if (event.type === "reasoning_delta") {
+            const text = event.content || "";
+            if (text) streamQueue.push({ type: "reasoning", content: text });
+          } else {
+            streamQueue.push({ type: "event", event });
+          }
+
           if (!rafId) {
             rafId = requestAnimationFrame(processQueue);
           }
         }
-        // Wait for the queue to drain after the stream ends
+        // 等待所有排队播放的字和事件彻底消耗完
         await new Promise<void>((resolve) => {
           const check = () => {
-            if (queue.length === 0 && rafId === 0) { resolve(); return; }
+            if (streamQueue.length === 0 && playTextBuffer === "" && rafId === 0) {
+              resolve();
+              return;
+            }
             requestAnimationFrame(check);
           };
           check();
@@ -214,6 +341,12 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
           useChatStore.getState().appendToAssistantOf(convId, `\n\n**错误**: ${err.message}`);
         }
       } finally {
+        if (rafId) {
+          cancelAnimationFrame(rafId);
+          rafId = 0;
+        }
+        flushPendingSync();
+
         const s = useChatStore.getState();
         s.setLoadingOf(convId, false);
         s.setCurrentToolOf(convId, null);
@@ -245,8 +378,8 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
             <div className="max-w-[680px] w-full">
               {/* Logo + Title */}
               <div className="text-center mb-8">
-                <div className="w-12 h-12 rounded-xl bg-[--muted] mx-auto mb-5 flex items-center justify-center">
-                  <svg className="w-6 h-6 text-[--muted-foreground]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[--primary]/10 to-[--primary]/5 mx-auto mb-5 flex items-center justify-center shadow-sm">
+                  <svg className="w-7 h-7 text-[--primary]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
                   </svg>
                 </div>
@@ -288,10 +421,10 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
                   <button
                     key={q.title}
                     onClick={() => handleSend(q.desc)}
-                    className="group flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-left hover:bg-[--muted] transition-colors cursor-pointer"
+                    className="group flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-left hover:bg-[--muted] active:scale-[0.99] transition-all duration-200 cursor-pointer"
                     role="listitem"
                   >
-                    <span className="text-[--muted-foreground] group-hover:text-[--foreground] transition-colors">
+                    <span className="text-[--muted-foreground] group-hover:text-[--primary] transition-colors">
                       {q.icon}
                     </span>
                     <span className="flex-1 min-w-0">
@@ -330,16 +463,16 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
 
             {isLoading && currentTool && (
               <div className="flex items-center gap-3 py-2 message-enter" role="status" aria-live="polite">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[--muted]">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[--primary]/10">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
                   </svg>
                 </div>
-                <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[--muted] text-[13px] text-[--muted-foreground]">
+                <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[--muted] text-[13px] text-[--muted-foreground] border border-[--border]/50">
                   {currentAgent && (
-                    <span className="text-[11px] font-medium text-[--primary] bg-[--primary]/5 px-1.5 py-0.5 rounded">{currentAgent}</span>
+                    <span className="text-[11px] font-medium text-[--primary] bg-[--primary]/8 px-1.5 py-0.5 rounded-md">{currentAgent}</span>
                   )}
-                  <div className="w-1.5 h-1.5 rounded-full bg-[--muted-foreground] animate-pulse" />
+                  <div className="w-1.5 h-1.5 rounded-full bg-[--primary] animate-pulse" />
                   <span>正在调用 <span className="font-mono font-medium text-[--foreground]">{currentTool}</span></span>
                 </div>
               </div>
@@ -347,24 +480,38 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
 
             {isLoading && !currentTool && (
               <div className="flex items-center gap-3 py-2 message-enter" role="status" aria-live="polite">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[--muted]">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[--primary]/10">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
                   </svg>
                 </div>
-                <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[--muted]">
+                <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[--muted] border border-[--border]/50">
                   {currentAgent && (
-                    <span className="text-[11px] font-medium text-[--primary] bg-[--primary]/5 px-1.5 py-0.5 rounded">{currentAgent}</span>
+                    <span className="text-[11px] font-medium text-[--primary] bg-[--primary]/8 px-1.5 py-0.5 rounded-md">{currentAgent}</span>
                   )}
-                  <div className="w-1.5 h-1.5 rounded-full bg-[--muted-foreground] animate-bounce" style={{ animationDelay: "0ms" }} />
-                  <div className="w-1.5 h-1.5 rounded-full bg-[--muted-foreground]/70 animate-bounce" style={{ animationDelay: "150ms" }} />
-                  <div className="w-1.5 h-1.5 rounded-full bg-[--muted-foreground]/40 animate-bounce" style={{ animationDelay: "300ms" }} />
+                  <div className="w-1.5 h-1.5 rounded-full bg-[--primary] animate-bounce" style={{ animationDelay: "0ms" }} />
+                  <div className="w-1.5 h-1.5 rounded-full bg-[--primary]/60 animate-bounce" style={{ animationDelay: "150ms" }} />
+                  <div className="w-1.5 h-1.5 rounded-full bg-[--primary]/30 animate-bounce" style={{ animationDelay: "300ms" }} />
                 </div>
               </div>
             )}
           </div>
         )}
       </div>
+
+      {/* Scroll-to-bottom button */}
+      {showScrollBtn && (
+        <button
+          onClick={scrollToBottom}
+          className="absolute bottom-28 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 rounded-full bg-[--card] border border-[--border] px-3 py-1.5 text-[12px] font-medium text-[--muted-foreground] shadow-md hover:shadow-lg hover:text-[--foreground] transition-all duration-200 cursor-pointer animate-in"
+          aria-label="滚动到底部"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+          回到最新
+        </button>
+      )}
 
       {/* Gradient fade + input bar */}
       {mounted && messages.length > 0 && (
