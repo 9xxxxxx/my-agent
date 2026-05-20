@@ -1,4 +1,4 @@
-import { useDeferredValue, memo, useMemo, useState, useEffect, useRef } from "react";
+import React, { useDeferredValue, memo, useMemo, useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import EChart from "@/components/chart/EChart";
@@ -151,6 +151,95 @@ function MarkdownTable({ children }: any) {
   );
 }
 
+// 智能自定义列表项，实现从文本列表到 Premium 可视化面板的跨越
+function MarkdownLi({ index, ordered, children, ...props }: any) {
+  const childArray = React.Children.toArray(children);
+  
+  let isBentoCard = false;
+  let titleText = "";
+  let descContent: React.ReactNode = null;
+  
+  if (childArray.length >= 2 && childArray[0] && typeof childArray[0] === "object" && (childArray[0] as any).type === "strong") {
+    isBentoCard = true;
+    const strongEl = childArray[0] as any;
+    titleText = String(strongEl.props.children || "");
+    const rest = childArray.slice(1);
+    descContent = rest;
+    if (rest.length > 0 && typeof rest[0] === "string") {
+      const text = rest[0];
+      if (text.startsWith("：") || text.startsWith(":")) {
+        const cleanText = text.replace(/^[：:]\s*/, "");
+        descContent = [cleanText, ...rest.slice(1)];
+      }
+    }
+  }
+
+  // 1. 有序列表：转换为带渐变圆环的步骤条/时间轴行
+  if (ordered) {
+    const stepNumber = (index ?? 0) + 1;
+    return (
+      <div className="flex gap-3.5 my-3 relative items-start group">
+        <div className="flex flex-col items-center shrink-0 mt-0.5">
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[--primary]/8 text-[11px] font-bold text-[--primary] border border-[--primary]/20 shadow-sm transition-transform duration-200 group-hover:scale-110">
+            {stepNumber}
+          </span>
+        </div>
+        <div className="flex-1 min-w-0 bg-[--muted]/15 hover:bg-[--muted]/30 rounded-xl p-3 border border-[--border]/40 hover:border-[--primary]/20 transition-all duration-200">
+          {isBentoCard ? (
+            <div className="flex flex-col gap-1">
+              <span className="font-semibold text-[13.5px] text-[--foreground] tracking-wide">
+                {titleText}
+              </span>
+              <span className="text-[13px] leading-relaxed text-[--muted-foreground]">
+                {descContent}
+              </span>
+            </div>
+          ) : (
+            <div className="text-[13px] leading-relaxed text-[--foreground]">
+              {children}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // 2. 无序列表匹配 Bento Card 结构：转换为属性卡片
+  if (isBentoCard) {
+    let icon = "📌";
+    const t = titleText.toLowerCase();
+    if (t.includes("勇猛") || t.includes("战") || t.includes("武") || t.includes("军")) icon = "⚔️";
+    else if (t.includes("性格") || t.includes("特")) icon = "🎭";
+    else if (t.includes("历史") || t.includes("评") || t.includes("纪")) icon = "📜";
+    else if (t.includes("事迹") || t.includes("事件")) icon = "⚡";
+    else if (t.includes("生平") || t.includes("时间") || t.includes("年") || t.includes("早年")) icon = "📅";
+    else if (t.includes("文学") || t.includes("形") || t.includes("演义")) icon = "📖";
+    else if (t.includes("细") || t.includes("书") || t.includes("画")) icon = "🎨";
+    else if (t.includes("怒") || t.includes("恶")) icon = "🔥";
+    
+    return (
+      <div className="flex flex-col gap-1.5 rounded-xl border border-[--border]/60 bg-gradient-to-br from-[--card] to-[--muted]/15 p-4 shadow-sm hover:shadow-md hover:border-[--primary]/20 transition-all duration-200 my-2.5">
+        <div className="flex items-center gap-2 select-none">
+          <span className="text-[15px]">{icon}</span>
+          <span className="font-semibold text-[14px] text-[--foreground] tracking-wide">
+            {titleText}
+          </span>
+        </div>
+        <div className="text-[13px] leading-relaxed text-[--muted-foreground] pl-0.5">
+          {descContent}
+        </div>
+      </div>
+    );
+  }
+
+  // 3. 默认无前缀列表项
+  return (
+    <li className="my-1.5 leading-relaxed pl-1 list-disc list-inside text-[13.5px] text-[--muted-foreground]">
+      {children}
+    </li>
+  );
+}
+
 const MarkdownBlock = memo(function MarkdownBlock({ content }: { content: string }) {
   const deferred = useDeferredValue(content);
   return (
@@ -160,6 +249,9 @@ const MarkdownBlock = memo(function MarkdownBlock({ content }: { content: string
         components={{
           code: MarkdownCode,
           table: MarkdownTable,
+          ul: ({ children }) => <ul className="my-3 space-y-2 pl-0 list-none">{children}</ul>,
+          ol: ({ children }) => <div className="my-4 space-y-1 pl-0">{children}</div>,
+          li: MarkdownLi,
           th: ({ children }) => (
             <th className="px-4 py-2.5 text-left font-semibold text-[12px] uppercase tracking-wider bg-[--muted] text-[--secondary-foreground] border-b border-[--border]">
               {children}
