@@ -115,9 +115,16 @@ export function messageReasoning(message: BlockMessage): string | undefined {
 }
 
 function appendMarkdown(blocks: ResponseBlock[], content: string, messageId: string): ResponseBlock[] {
-  const last = blocks[blocks.length - 1];
-  if (last?.type === "markdown") {
-    return [...blocks.slice(0, -1), { ...last, content: last.content + content }];
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i];
+    if (b.type === "chart" || b.type === "table" || b.type === "error") {
+      break;
+    }
+    if (b.type === "markdown") {
+      const newBlocks = [...blocks];
+      newBlocks[i] = { ...b, content: b.content + content };
+      return newBlocks;
+    }
   }
   return [...blocks, { id: blockId(messageId, `markdown-${blocks.length}`), type: "markdown", content }];
 }
