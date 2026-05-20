@@ -11,6 +11,12 @@ AI 驱动的智能数据分析助手。用自然语言提问，自动完成数�
 - 停止生成、重试、编辑重发
 - 对话记录本地 + 后端双持久化
 
+### 联网搜索
+- DuckDuckGo 互联网搜索，无需额外 API Key
+- 自动识别搜索意图（"搜一下"、"最新消息"等关键词触发）
+- 搜索结果智能摘要，自然语言回复
+- 适用于实时资讯、天气、新闻、超出模型知识范围的问题
+
 ### 数据分析
 - 连接 PostgreSQL / MySQL / SQLite / DuckDB 数据库
 - 上传 CSV / Excel / JSON / Parquet 文件（最大 500MB）
@@ -37,7 +43,7 @@ AI 驱动的智能数据分析助手。用自然语言提问，自动完成数�
 
 ### 多 Agent 架构
 - **Orchestrator（智能路由）** — 分析用户意图，转交专业 Agent
-- **GeneralAssistant（通用助手）** — 日常对话、知识问答、文本处理
+- **GeneralAssistant（通用助手）** — 日常对话、知识问答、联网搜索、文本处理
 - **DataAnalyst（数据分析助手）** — SQL 查询、文件分析、图表生成
 - **ReportWriter（报告撰写助手）** — 报告生成、导出、通知分发
 - 确定性关键词路由，用户无感知切换
@@ -54,8 +60,9 @@ AI 驱动的智能数据分析助手。用自然语言提问，自动完成数�
 | 状态管理 | Zustand 5 |
 | 富文本 | TipTap (StarterKit + Table + CodeBlock + Image + Link) |
 | Markdown | ReactMarkdown + remark-gfm |
-| 后端框架 | Python 3.12+ + FastAPI + Uvicorn |
+| 后端框架 | Python 3.13+ + FastAPI + Uvicorn |
 | AI 引擎 | OpenAI Agents SDK + OpenAI 兼容 API (DeepSeek / GPT / Qwen / MiMo) |
+| 联网搜索 | DuckDuckGo Search (duckduckgo-search) |
 | ORM | SQLAlchemy 2.0 |
 | 内部数据库 | SQLite (对话记录、配置、报告元数据) |
 | 用户数据库 | PostgreSQL / MySQL / SQLite / DuckDB |
@@ -73,7 +80,7 @@ AI 驱动的智能数据分析助手。用自然语言提问，自动完成数�
 ### 环境要求
 
 - Node.js >= 18
-- Python >= 3.12
+- Python >= 3.13
 - pnpm（前端包管理）
 - uv（后端包管理）
 
@@ -185,7 +192,7 @@ my-agent/
 │   │
 │   ├── core/                         # 核心业务逻辑
 │   │   ├── agent.py                  # 多 Agent 系统（Orchestrator + 3 个专业 Agent）
-│   │   ├── router.py                 # 确定性意图路由（关键词匹配）
+│   │   ├── router.py                 # 确定性意图路由（关键词匹配 + 搜索意图识别）
 │   │   ├── llm.py                    # LLM 客户端工厂（OpenAI 兼容）
 │   │   ├── config.py                 # 环境变量配置类
 │   │   ├── database.py               # SQLAlchemy 引擎管理 + 连接池
@@ -204,7 +211,8 @@ my-agent/
 │   │   ├── file_tools.py             # list_uploaded_files / query_uploaded_file
 │   │   ├── chart_tools.py            # create_chart（14 种图表类型）
 │   │   ├── report_tools.py           # generate_report（Markdown 报告）
-│   │   └── notification_tools.py     # send_feishu_notification / send_email_notification
+│   │   ├── notification_tools.py     # send_feishu_notification / send_email_notification
+│   │   └── web_tools.py              # web_search（DuckDuckGo 联网搜索）
 │   │
 │   ├── tests/                        # 后端单元测试（48 个用例）
 │   │   ├── conftest.py               # 测试配置
@@ -303,9 +311,9 @@ my-agent/
 │   (通用助手)    │  │ (数据分析助手) │  │ (报告撰写助手) │
 │                │  │              │  │              │
 │ · 知识问答     │  │ · SQL 查询    │  │ · 报告生成    │
-│ · 文本创作     │  │ · 文件分析    │  │ · 导出 PDF    │
-│ · 翻译总结     │  │ · 图表生成    │  │ · 飞书推送    │
-│                │  │ · 表结构探索  │  │ · 邮件发送    │
+│ · 联网搜索     │  │ · 文件分析    │  │ · 导出 PDF    │
+│ · 文本创作     │  │ · 图表生成    │  │ · 飞书推送    │
+│ · 翻译总结     │  │ · 表结构探索  │  │ · 邮件发送    │
 └──────────────┘  └──────────────┘  └──────────────┘
 ```
 
@@ -313,6 +321,7 @@ my-agent/
 
 | 用户意图 | 关键词示例 | 路由目标 |
 |---|---|---|
+| 联网搜索 | 搜索、搜一下、搜搜、查一下最新、最新消息、最新新闻、search、网上搜 | GeneralAssistant |
 | 数据分析 | 数据、表、sql、查询、统计、趋势、图表、可视化、分析 | DataAnalyst |
 | 报告生成 | 报告、导出、通知、发送、飞书、邮件、markdown | ReportWriter |
 | 日常对话 | 其他所有消息 | GeneralAssistant |
@@ -570,6 +579,13 @@ CORS_ORIGINS=https://your-domain.com
 ---
 
 ## 使用示例
+
+### 联网搜索
+
+```
+用户: 搜一下今天的科技新闻
+AI: [调用 web_search] → [汇总搜索结果] → [自然语言回复]
+```
 
 ### 数据分析
 
