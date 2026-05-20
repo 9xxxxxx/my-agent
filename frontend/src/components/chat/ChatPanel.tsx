@@ -153,17 +153,12 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
       const dbProfile = getActiveDB() ?? undefined;
       const dbUrl = assembleDbUrl(dbProfile);
 
-      // --- 自适应弹性打字机 (Adaptive Elastic Typewriter) 与 Reasoning 直出 ---
-      // reasoning 思考过程无延迟一帧直出；text 正文通过自适应打字机缓冲区平滑播放。
-      // 当积压字符较多（网络合并返回或生成暴增）时，打字速度会自适应提速以避免播放滞后，
-      // 且严格控制非文本事件与文本的先后执行顺序，保障极佳的逐字流式感和系统健壮性。
-      type QueueItem =
-        | { type: "text"; content: string }
-        | { type: "reasoning"; content: string }
-        | { type: "event"; event: ChatEvent };
-
-      const streamQueue: QueueItem[] = [];
+      // --- 解耦的流式渲染通道与自适应打字机 ---
+      // 将流式数据划分三个独立渲染通道：状态通道 (即时处理状态与工具)、思考通道 (即时处理推理) 和正文打字通道 (弹性打字机)
+      // 保证用户发送消息后的第一时间界面即亮起 Agent 状态指示灯，且思考过程能顺畅流式倾泻，绝不卡死。
       let playTextBuffer = "";
+      let pendingReasoning = "";
+      const pendingEvents: ChatEvent[] = [];
       let rafId = 0;
 
       const processEvent = (event: ChatEvent, s: ReturnType<typeof useChatStore.getState>) => {
@@ -206,10 +201,10 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
 
       const flushPendingSync = () => {
         const s = useChatStore.getState();
-        // 健壮性保障：若用户已经切换当前活动对话，直接废弃未消费的数据以防止串屏
         if (s.activeId !== convId) {
-          streamQueue.length = 0;
           playTextBuffer = "";
+          pendingReasoning = "";
+          pendingEvents.length = 0;
           return;
         }
 
@@ -227,23 +222,23 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
           }
         };
 
-        // 1. 同步清空当前的打字播放缓冲区
+        // 1. 同步清空 Reasoning 缓冲区
+        if (pendingReasoning) {
+          reasoningBatch += pendingReasoning;
+          pendingReasoning = "";
+        }
+
+        // 2. 同步清空正文缓冲区
         if (playTextBuffer) {
           textBatch += playTextBuffer;
           playTextBuffer = "";
         }
 
-        // 2. 同步处理完队列中残余的所有项目
-        while (streamQueue.length > 0) {
-          const item = streamQueue.shift()!;
-          if (item.type === "reasoning") {
-            reasoningBatch += item.content;
-          } else if (item.type === "text") {
-            textBatch += item.content;
-          } else {
-            flushText();
-            processEvent(item.event, s);
-          }
+        // 3. 同步消费所有待处理的非文本事件
+        while (pendingEvents.length > 0) {
+          const ev = pendingEvents.shift()!;
+          flushText();
+          processEvent(ev, s);
         }
         flushText();
       };
@@ -252,8 +247,9 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
         const s = useChatStore.getState();
         if (s.activeId !== convId) {
           rafId = 0;
-          streamQueue.length = 0;
           playTextBuffer = "";
+          pendingReasoning = "";
+          pendingEvents.length = 0;
           return;
         }
 
@@ -271,24 +267,22 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
           }
         };
 
-        // 1. 只有当前没有正文待播放时，才从流队列中提取消费新项目，确保文本与事件发生的时序正确
-        while (streamQueue.length > 0 && playTextBuffer === "") {
-          const item = streamQueue.shift()!;
-          if (item.type === "reasoning") {
-            // reasoning 过程无延迟一帧全部消费直出
-            reasoningBatch += item.content;
-          } else if (item.type === "text") {
-            playTextBuffer += item.content;
-          } else {
-            flushText();
-            processEvent(item.event, s);
-          }
+        // 1. 推理思考通道无条件优先消费直出，实现 Reasoning 实时流式喷涌而绝不阻塞
+        if (pendingReasoning !== "") {
+          reasoningBatch += pendingReasoning;
+          pendingReasoning = "";
         }
 
-        // 2. 自适应打字机处理
+        // 2. 状态通道在当帧内一并即时消费，防卡顿与响应不及时
+        while (pendingEvents.length > 0) {
+          const ev = pendingEvents.shift()!;
+          flushText();
+          processEvent(ev, s);
+        }
+
+        // 3. 正文自适应打字通道消费
         if (playTextBuffer !== "") {
           const len = playTextBuffer.length;
-          // 自适应速率计算：积压越长字速越快，力求在 ~6 帧 (100ms) 内播放完积压文字，小量积压时维持每帧至少 1 字的逐字吐字感
           const charsThisFrame = Math.max(1, Math.min(len, Math.ceil(len / 6)));
           textBatch += playTextBuffer.slice(0, charsThisFrame);
           playTextBuffer = playTextBuffer.slice(charsThisFrame);
@@ -296,8 +290,8 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
 
         flushText();
 
-        // 3. 调度下一帧
-        if (streamQueue.length > 0 || playTextBuffer !== "") {
+        // 4. 调度下一帧
+        if (playTextBuffer !== "" || pendingReasoning !== "" || pendingEvents.length > 0) {
           rafId = requestAnimationFrame(processQueue);
         } else {
           rafId = 0;
@@ -306,28 +300,28 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
 
       try {
         for await (const event of streamChat(message, llm.config, controller.signal, dbUrl || undefined, history)) {
-          // 健壮性保障：切换对话时即刻跳出循环，中止后台流接收
           if (useChatStore.getState().activeId !== convId) {
             break;
           }
           if (event.type === "text_delta") {
             const text = event.content || "";
-            if (text) streamQueue.push({ type: "text", content: text });
+            if (text) playTextBuffer += text;
           } else if (event.type === "reasoning_delta") {
             const text = event.content || "";
-            if (text) streamQueue.push({ type: "reasoning", content: text });
+            if (text) pendingReasoning += text;
           } else {
-            streamQueue.push({ type: "event", event });
+            pendingEvents.push(event);
           }
 
           if (!rafId) {
             rafId = requestAnimationFrame(processQueue);
           }
         }
-        // 等待所有排队播放的字和事件彻底消耗完
+
+        // 等待正文完全播放完毕
         await new Promise<void>((resolve) => {
           const check = () => {
-            if (streamQueue.length === 0 && playTextBuffer === "" && rafId === 0) {
+            if (playTextBuffer === "" && pendingReasoning === "" && pendingEvents.length === 0 && rafId === 0) {
               resolve();
               return;
             }
@@ -442,8 +436,10 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
           /* Message list */
           <div className="max-w-[1000px] mx-auto px-4 sm:px-6 pt-4 sm:pt-6 pb-4 space-y-4" style={{ "--chat-font-size": `${fontSize}px` } as React.CSSProperties}>
             {messages.map((msg, i) => {
-              // 跳过空的 assistant 消息（流式传输尚未到达），避免与 loading 指示器重复
-              if (msg.role === "assistant" && !msg.content && isLoading && i === messages.length - 1) {
+              // 只有当助手消息既无正文、也无思考过程和区块时，且正在加载中，才临时隐藏，避免遮挡底部的 loading 指示器。
+              // 一旦开始输出 reasoning 思考文字，需立刻渲染助手气泡以便展示思考面板。
+              const hasAnyContent = !!(msg.content?.trim() || msg.reasoning?.trim() || msg.blocks.length > 0);
+              if (msg.role === "assistant" && !hasAnyContent && isLoading && i === messages.length - 1) {
                 return null;
               }
               return (
