@@ -68,7 +68,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] active:scale-95 transition-all duration-100 ${
+      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] active:scale-95 transition-all duration-150 ${
         copied
           ? "bg-[--success]/10 text-[--success]"
           : "text-[--muted-foreground] hover:bg-[--muted] hover:text-[--foreground]"
@@ -96,7 +96,7 @@ export default function MessageBubble({ message, onRetry, onEdit }: Props) {
     return (
       <div className="group flex justify-end py-2">
         <div className="max-w-[86%] sm:max-w-[72%]">
-          <div className="rounded-2xl rounded-br-md bg-[--muted] px-4 py-3 text-[15px] leading-7 text-[--foreground] shadow-sm border border-[--border]">
+          <div className="rounded-2xl rounded-br-md bg-[--primary]/[0.06] px-4 py-3 text-[15px] leading-7 text-[--foreground] shadow-sm border border-[--primary]/10">
             <p className="whitespace-pre-wrap">{text}</p>
           </div>
           <div className="mt-1 flex justify-end gap-1 opacity-0 translate-y-1 transition-all duration-200 group-hover:opacity-100 group-hover:translate-y-0 focus-within:opacity-100 focus-within:translate-y-0">
@@ -147,6 +147,24 @@ export default function MessageBubble({ message, onRetry, onEdit }: Props) {
     return () => clearInterval(id);
   }, [isThinking]);
 
+  // 控制思考面板的折叠状态：思考中默认展开，历史消息/思考完成默认折叠
+  const [isDetailsOpen, setIsDetailsOpen] = useState(isThinking);
+  const prevIsThinkingRef = useRef(isThinking);
+
+  useEffect(() => {
+    if (isThinking) {
+      setIsDetailsOpen(true);
+    } else if (prevIsThinkingRef.current && !isThinking) {
+      // 思考刚结束，自动收起
+      setIsDetailsOpen(false);
+    }
+    prevIsThinkingRef.current = isThinking;
+  }, [isThinking]);
+
+  const handleToggle = (e: React.SyntheticEvent<HTMLDetailsElement>) => {
+    setIsDetailsOpen(e.currentTarget.open);
+  };
+
   // Blocks to pass to MessageBlocks (exclude standalone tool blocks, they're inside thinking now)
   const contentBlocks = useMemo(
     () => message.blocks.filter((b) => b.type !== "tool"),
@@ -155,24 +173,49 @@ export default function MessageBubble({ message, onRetry, onEdit }: Props) {
 
   const durationStr = formatDuration(earliestStart, latestCompleted);
 
+  // Legacy 历史消息思考过程默认折叠
+  const [isLegacyOpen, setIsLegacyOpen] = useState(false);
+
   return (
     <div className="group flex justify-start gap-2.5 py-3">
       {/* Assistant avatar */}
-      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[--primary]/10 text-[--primary]">
+      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[--primary]/15 to-[--primary]/5 text-[--primary]">
         <Sparkles size={14} />
       </div>
       <div className="max-w-[min(820px,100%)] flex-1 min-w-0">
         {allThinkingSteps.length > 0 && (
-          <details open className="mb-3 rounded-lg bg-[--primary]/[0.03] px-3.5 py-2.5 text-[12px]">
-            <summary className="flex cursor-pointer list-none items-center gap-1.5 select-none">
-              <Brain size={13} className="shrink-0 text-[--primary]/60" />
-              <span className="text-[12px] font-medium text-[--primary]/70">思考过程</span>
+          <details
+            open={isDetailsOpen}
+            onToggle={handleToggle}
+            className="mb-3 rounded-xl bg-[--primary]/[0.03] px-4 py-3 text-[12px] border border-[--primary]/6 transition-all duration-300"
+          >
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 select-none hover:text-[--primary] transition-colors">
+              <Brain size={13} className="shrink-0 text-[--primary]/70" />
+              <span className="text-[12px] font-medium text-[--primary]/80">思考过程</span>
               {durationStr && (
                 <span className="text-[11px] font-normal text-[--muted-foreground]">(用时 {durationStr})</span>
               )}
-              <svg className="shrink-0 text-[--muted-foreground]/50" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+              {isThinking && (
+                <span className="flex h-1.5 w-1.5 relative ml-1">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[--primary] opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[--primary]"></span>
+                </span>
+              )}
+              <svg
+                className={`ml-auto shrink-0 text-[--muted-foreground]/50 transition-transform duration-200 ${isDetailsOpen ? "rotate-180" : ""}`}
+                width="10"
+                height="10"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
             </summary>
-            <div className="mt-2.5 space-y-2 border-l-2 border-[--primary]/10 pl-3">
+            <div className="mt-2.5 space-y-2 border-l-2 border-[--primary]/15 pl-3 transition-opacity duration-200">
               {allThinkingSteps.map((step, i) => {
                 if (step.type === "reasoning") {
                   return (
@@ -210,13 +253,29 @@ export default function MessageBubble({ message, onRetry, onEdit }: Props) {
         )}
         {/* Fallback for legacy messages with reasoning field but no thinking blocks */}
         {!allThinkingSteps.length && message.reasoning && (
-          <details open className="mb-3 rounded-lg bg-[--primary]/[0.03] px-3.5 py-2.5 text-[12px]">
-            <summary className="flex cursor-pointer list-none items-center gap-1.5 select-none">
-              <Brain size={13} className="shrink-0 text-[--primary]/60" />
-              <span className="text-[12px] font-medium text-[--primary]/70">思考过程</span>
-              <svg className="shrink-0 text-[--muted-foreground]/50" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+          <details
+            open={isLegacyOpen}
+            onToggle={(e) => setIsLegacyOpen(e.currentTarget.open)}
+            className="mb-3 rounded-xl bg-[--primary]/[0.03] px-4 py-3 text-[12px] border border-[--primary]/6 transition-all duration-300"
+          >
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 select-none hover:text-[--primary] transition-colors">
+              <Brain size={13} className="shrink-0 text-[--primary]/70" />
+              <span className="text-[12px] font-medium text-[--primary]/80">思考过程</span>
+              <svg
+                className={`ml-auto shrink-0 text-[--muted-foreground]/50 transition-transform duration-200 ${isLegacyOpen ? "rotate-180" : ""}`}
+                width="10"
+                height="10"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
             </summary>
-            <div className="mt-2.5 border-l-2 border-[--primary]/10 pl-3">
+            <div className="mt-2.5 border-l-2 border-[--primary]/15 pl-3 transition-opacity duration-200">
               <div className="whitespace-pre-wrap leading-relaxed text-[12px] text-[--muted-foreground] italic">{message.reasoning}</div>
             </div>
           </details>

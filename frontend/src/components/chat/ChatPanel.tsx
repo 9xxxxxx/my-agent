@@ -283,7 +283,11 @@ export default function ChatPanel({ mounted = true }: { mounted?: boolean }) {
         // 3. 正文自适应打字通道消费
         if (playTextBuffer !== "") {
           const len = playTextBuffer.length;
-          const charsThisFrame = Math.max(1, Math.min(len, Math.ceil(len / 6)));
+          // 分档呼吸流速算法：积压较少时限制为每帧仅 1 字以维持极佳的“一字一字吐墨”的平缓舒适感；
+          // 当积压字数较多时，自适应在 8 帧 (约 130ms) 内渐进追平，消除急促与晃眼感。
+          const charsThisFrame = len < 8
+            ? 1
+            : Math.max(1, Math.min(len, Math.ceil(len / 8)));
           textBatch += playTextBuffer.slice(0, charsThisFrame);
           playTextBuffer = playTextBuffer.slice(charsThisFrame);
         }
